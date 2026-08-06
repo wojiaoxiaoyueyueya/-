@@ -1,0 +1,42 @@
+'use strict';
+
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('lingjian', {
+  loadState: () => ipcRenderer.invoke('state:load'),
+  saveState: state => ipcRenderer.invoke('state:save', state),
+  saveSettings: settings => ipcRenderer.invoke('settings:save-all', settings),
+  getDataDirectory: () => ipcRenderer.invoke('data:directory'),
+  chooseDataDirectory: () => ipcRenderer.invoke('data:choose-directory'),
+  testReminder: () => ipcRenderer.invoke('reminder:test'),
+  openReminder: payload => ipcRenderer.invoke('reminder:open', payload),
+  setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
+  previewAppearance: patch => ipcRenderer.send('appearance:preview', patch),
+  openSettingsWindow: () => ipcRenderer.invoke('window:open-settings'),
+  settingsWindowAction: (action, value) => ipcRenderer.invoke('window:settings-action', action, value),
+  resizeStart: edge => ipcRenderer.invoke('window:resize-start', edge),
+  resizeMove: () => ipcRenderer.invoke('window:resize-move'),
+  resizeEnd: () => ipcRenderer.invoke('window:resize-end'),
+  getMainWindowBounds: () => ipcRenderer.invoke('window:main-bounds'),
+  setMainWindowSize: size => ipcRenderer.invoke('window:main-size', size),
+  windowAction: action => ipcRenderer.invoke('window:action', action),
+  widgetAction: action => ipcRenderer.invoke('window:widget', action),
+  isCursorInsideWidget: () => ipcRenderer.invoke('window:widget-pointer-inside'),
+  edgeHover: () => ipcRenderer.invoke('window:edge-hover'),
+  edgeLeave: () => ipcRenderer.invoke('window:edge-leave'),
+  chooseBackgroundImage: target => ipcRenderer.invoke('appearance:choose-image', target),
+  loadBackgroundImage: target => ipcRenderer.invoke('appearance:load-image', target),
+  clearBackgroundImage: target => ipcRenderer.invoke('appearance:clear-image', target),
+  exportData: () => ipcRenderer.invoke('data:export'),
+  importData: () => ipcRenderer.invoke('data:import'),
+  onQuickAdd: callback => ipcRenderer.on('app:quick-add', callback),
+  onEdgeState: callback => ipcRenderer.on('app:edge-state', (_event, value) => callback(value)),
+  onWidgetState: callback => ipcRenderer.on('app:widget-state', (_event, value) => callback(value)),
+  onSettingChanged: callback => ipcRenderer.on('app:setting-changed', (_event, value) => callback(value)),
+  onAppearancePreview: callback => ipcRenderer.on('app:appearance-preview', (_event, value) => callback(value)),
+  onDataDirectoryChanged: callback => ipcRenderer.on('app:data-directory-changed', (_event, value) => callback(value)),
+  onReminderFired: callback => ipcRenderer.on('app:reminder-fired', (_event, value) => callback(value)),
+  onOpenReminder: callback => ipcRenderer.on('app:open-reminder', (_event, value) => callback(value)),
+  onStateUpdated: callback => ipcRenderer.on('app:state-updated', (_event, value) => callback(value)),
+  onMainBounds: callback => ipcRenderer.on('app:main-bounds', (_event, value) => callback(value))
+});

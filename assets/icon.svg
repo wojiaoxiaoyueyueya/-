@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="tile" x1="70" y1="58" x2="445" y2="468" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFC45F"/>
+      <stop offset=".48" stop-color="#FF8B72"/>
+      <stop offset="1" stop-color="#D96888"/>
+    </linearGradient>
+    <radialGradient id="shine" cx="0" cy="0" r="1" gradientTransform="translate(112 82) rotate(47) scale(354 278)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF" stop-opacity=".58"/>
+      <stop offset=".54" stop-color="#FFF" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#FFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="paper" x1="143" y1="113" x2="359" y2="405" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF8"/>
+      <stop offset="1" stop-color="#FFF2EB"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="317" y1="109" x2="381" y2="179" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE7D4"/>
+      <stop offset="1" stop-color="#FFC2B2"/>
+    </linearGradient>
+    <linearGradient id="check" x1="177" y1="195" x2="330" y2="300" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF9A68"/>
+      <stop offset="1" stop-color="#D96888"/>
+    </linearGradient>
+    <filter id="tileShadow" x="-20%" y="-20%" width="140%" height="155%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#7F3C50" flood-opacity=".28"/>
+    </filter>
+    <filter id="paperShadow" x="-30%" y="-25%" width="160%" height="165%">
+      <feDropShadow dx="0" dy="15" stdDeviation="15" flood-color="#8B3F55" flood-opacity=".23"/>
+    </filter>
+    <clipPath id="tileClip">
+      <rect x="42" y="42" width="428" height="428" rx="124"/>
+    </clipPath>
+  </defs>
+
+  <g filter="url(#tileShadow)">
+    <rect x="42" y="42" width="428" height="428" rx="124" fill="url(#tile)"/>
+    <g clip-path="url(#tileClip)">
+      <rect x="42" y="42" width="428" height="428" fill="url(#shine)"/>
+      <path d="M42 384c90-54 166-56 238-24 77 34 133 22 190-18v128H42z" fill="#7F3F74" opacity=".10"/>
+      <path d="M76 55c65-38 164-39 247-5-100 8-190 36-271 91z" fill="#FFF" opacity=".12"/>
+    </g>
+    <rect x="48" y="48" width="416" height="416" rx="118" fill="none" stroke="#FFF" stroke-opacity=".30" stroke-width="8"/>
+  </g>
+
+  <g filter="url(#paperShadow)">
+    <path d="M169 104h143l72 72v191c0 24-19 43-43 43H169c-24 0-43-19-43-43V147c0-24 19-43 43-43z" fill="url(#paper)"/>
+    <path d="M312 104v47c0 14 11 25 25 25h47z" fill="url(#fold)"/>
+    <path d="M312 104v47c0 14 11 25 25 25h47" fill="none" stroke="#E87879" stroke-opacity=".18" stroke-width="5"/>
+  </g>
+
+  <path d="m177 246 47 48 105-111" fill="none" stroke="url(#check)" stroke-linecap="round" stroke-linejoin="round" stroke-width="29"/>
+  <path d="M177 342h138M177 375h91" fill="none" stroke="#D96E7D" stroke-linecap="round" stroke-width="14" opacity=".52"/>
+
+  <path d="M104 159v27M91 172h27" stroke="#FFF" stroke-linecap="round" stroke-width="10" opacity=".82"/>
+  <circle cx="108" cy="122" r="7" fill="#FFF" opacity=".72"/>
+</svg>

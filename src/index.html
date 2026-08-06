@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'">
+  <title>轻笺</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="edgeHandle" class="edge-handle" aria-label="移入显示轻笺"><span>轻</span><span>笺</span></div>
+  <section id="widget" class="widget-shell" aria-label="轻笺桌面小部件">
+    <div class="custom-background" id="widgetBackgroundLayer"></div>
+    <div class="widget-pill drag-region">
+      <div class="widget-progress drag-region" id="widgetProgress" title="今日进度"><span id="widgetProgressText">0</span></div>
+      <button class="widget-check no-drag" id="widgetCompleteBtn" aria-label="完成当前事项"><span data-icon="check"></span></button>
+      <div class="widget-current-block no-drag">
+        <button class="widget-note-switch" id="widgetNoteSwitchBtn" title="切换到下一个便签">
+          <span class="widget-note-name" id="widgetNoteName">今天要做</span><span data-icon="chevron-right"></span>
+        </button>
+        <button class="widget-current" id="widgetCurrentBtn" title="打开当前事项详情">
+          <strong id="widgetCurrentText">暂无待办</strong>
+        </button>
+      </div>
+      <div class="widget-nav no-drag">
+        <button id="widgetPrevBtn" aria-label="上一条" title="上一条" data-icon="chevron-left"></button>
+        <span id="widgetPosition">0/0</span>
+        <button id="widgetNextBtn" aria-label="下一条" title="下一条" data-icon="chevron-right"></button>
+      </div>
+      <button class="widget-expand no-drag" id="widgetExpandBtn" aria-label="展开小部件" title="展开" data-icon="chevron-up"></button>
+    </div>
+    <div class="widget-panel">
+      <header class="widget-panel-head drag-region">
+        <div class="widget-panel-meta"><span class="widget-accent" id="widgetAccent"></span><select class="no-drag" id="widgetNoteSelect" aria-label="选择便签"></select><small id="widgetSummary">0 项待完成</small></div>
+        <div class="widget-panel-actions no-drag">
+          <button id="widgetFullBtn" title="打开完整轻笺" aria-label="打开完整轻笺" data-icon="maximize-2"></button>
+          <button id="widgetHideBtn" title="隐藏到托盘" aria-label="隐藏到托盘" data-icon="eye-off"></button>
+          <button id="widgetCollapseBtn" title="收起" aria-label="收起" data-icon="chevron-down"></button>
+        </div>
+      </header>
+      <div class="widget-list" id="widgetList"></div>
+      <div class="widget-empty" id="widgetEmpty" hidden><span>✓</span><strong>今天的事项都完成了</strong><small>休息一下，或者添加新的安排。</small></div>
+      <form class="widget-add no-drag" id="widgetAddForm">
+        <input id="widgetAddInput" maxlength="160" placeholder="快速添加待办…" autocomplete="off">
+        <button type="submit" aria-label="添加" data-icon="plus"></button>
+      </form>
+      <footer class="widget-footer"><span>点击事项可编辑详细工作与备注</span><button id="widgetSettingsBtn" data-icon="settings">设置</button></footer>
+    </div>
+  </section>
+  <main id="app" class="app-shell">
+    <div class="custom-background" id="mainBackgroundLayer"></div>
+    <header class="titlebar">
+      <div class="brand drag-region">
+        <img src="../assets/icon.svg" alt="">
+        <span>轻笺</span>
+        <span class="save-status" id="saveStatus">已保存</span>
+      </div>
+      <div class="window-actions no-drag">
+        <button class="icon-btn" id="pinBtn" title="窗口置顶" aria-label="窗口置顶" data-icon="pin"></button>
+        <button class="icon-btn" id="edgeBtn" title="贴边半隐藏" aria-label="贴边半隐藏" data-icon="panel"></button>
+        <button class="icon-btn" id="widgetBtn" title="收成左下角小部件" aria-label="收成桌面小部件" data-icon="widget"></button>
+        <button class="icon-btn" data-window-action="minimize" title="最小化" aria-label="最小化" data-icon="minus"></button>
+        <button class="icon-btn" data-window-action="maximize" title="最大化/还原" aria-label="最大化/还原" data-icon="square"></button>
+        <button class="icon-btn close-btn" data-window-action="close" title="按设置关闭" aria-label="关闭" data-icon="x"></button>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <aside class="sidebar" id="sidebar">
+        <div class="side-heading">
+          <span>我的便签</span>
+          <button class="round-btn" id="newNoteBtn" title="新建便签" aria-label="新建便签" data-icon="plus"></button>
+        </div>
+        <nav class="note-list" id="noteList"></nav>
+        <div class="sidebar-footer">
+          <button class="side-action" id="settingsBtn"><span data-icon="settings"></span><span>偏好设置</span></button>
+        </div>
+      </aside>
+
+      <section class="content">
+        <div class="content-head">
+          <div class="note-title-wrap">
+            <button class="mobile-menu icon-btn" id="mobileMenuBtn" aria-label="显示便签列表" data-icon="menu"></button>
+            <input class="note-title" id="noteTitle" maxlength="40" aria-label="便签标题">
+            <span class="note-count" id="noteCount"></span>
+          </div>
+          <div class="head-actions">
+            <button class="icon-btn" id="searchBtn" title="搜索" aria-label="搜索" data-icon="search"></button>
+            <button class="icon-btn" id="noteMenuBtn" title="便签菜单" aria-label="便签菜单" data-icon="more"></button>
+          </div>
+        </div>
+
+        <div class="progress-row">
+          <div class="progress-track"><span id="progressBar"></span></div>
+          <span id="progressText">今天也要稳稳向前</span>
+        </div>
+
+        <div class="search-row" id="searchRow" hidden>
+          <span data-icon="search"></span>
+          <input id="searchInput" placeholder="搜索当前便签…" autocomplete="off">
+          <button class="icon-btn" id="clearSearchBtn" aria-label="清除搜索" data-icon="x"></button>
+        </div>
+
+        <form class="quick-add" id="quickAddForm">
+          <button type="button" class="color-trigger" id="quickColorBtn" title="选择颜色"><span></span></button>
+          <input id="quickAddInput" maxlength="160" placeholder="写下一个待办，按回车添加…" autocomplete="off">
+          <button type="button" class="quick-reminder" id="quickReminderBtn" title="设置提醒" aria-label="设置提醒" data-icon="bell"></button>
+          <button class="add-btn" type="submit"><span data-icon="plus"></span><span>添加</span></button>
+        </form>
+
+        <div class="list-toolbar">
+          <div class="filters" id="filterBar">
+            <button class="filter active" data-filter="all">全部</button>
+            <button class="filter" data-filter="active">未完成</button>
+            <button class="filter" data-filter="today">今天</button>
+            <button class="filter" data-filter="completed">已完成</button>
+          </div>
+          <button class="sort-hint" id="sortHint" title="拖动卡片左侧把手调整顺序"><span data-icon="grip"></span>可拖动排序</button>
+        </div>
+
+        <div class="task-scroll" id="taskScroll">
+          <div class="task-list" id="taskList"></div>
+          <div class="empty-state" id="emptyState" hidden>
+            <div class="empty-illustration"><span>✓</span></div>
+            <h3>这里很清爽</h3>
+            <p>添加一件小事，轻松开始。</p>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div class="menu-popover" id="noteMenu" hidden>
+    <button data-note-action="rename"><span data-icon="edit"></span>重命名便签</button>
+    <button data-note-action="color"><span data-icon="palette"></span>更换便签颜色</button>
+    <button data-note-action="complete"><span data-icon="check-all"></span>全部标为完成</button>
+    <button data-note-action="clear"><span data-icon="archive"></span>清理已完成事项</button>
+    <hr>
+    <button class="danger" data-note-action="delete"><span data-icon="trash"></span>删除当前便签</button>
+  </div>
+
+  <div class="palette-popover" id="palette" hidden></div>
+
+  <dialog id="taskDialog" class="modal task-modal">
+    <form method="dialog" id="taskForm">
+      <div class="modal-head">
+        <div><span class="eyebrow">待办详情</span><h2 id="taskDialogTitle">添加待办</h2></div>
+        <button type="button" class="icon-btn" data-close-dialog="taskDialog" aria-label="关闭" data-icon="x"></button>
+      </div>
+      <div class="form-stack">
+        <label>事项名称<input id="taskText" maxlength="160" required placeholder="要做什么？"></label>
+        <label>详细工作与备注<textarea id="taskDetails" maxlength="2000" rows="5" placeholder="写下具体步骤、完成标准、地点、联系人或其他说明…"></textarea></label>
+        <div class="form-grid">
+          <label>优先级<select id="taskPriority"><option value="normal">普通</option><option value="high">重要</option><option value="low">稍后</option></select></label>
+          <label>数量<input id="taskQuantity" type="number" min="1" max="999" value="1"></label>
+        </div>
+        <div class="color-field"><span>卡片颜色</span><div class="color-options" id="taskColorOptions"></div></div>
+        <div class="switch-line">
+          <div><strong>定时提醒</strong><small>到时间后发送系统通知</small></div>
+          <label class="switch"><input type="checkbox" id="reminderEnabled"><span></span></label>
+        </div>
+        <div class="reminder-fields" id="reminderFields" hidden>
+          <label>提醒时间<input id="reminderAt" type="datetime-local"></label>
+          <label>重复<select id="reminderRepeat"><option value="none">仅一次</option><option value="daily">每天</option><option value="weekdays">每个工作日</option><option value="weekly">每周</option><option value="monthly">每月</option></select></label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="text-btn danger" id="deleteTaskBtn" hidden>删除</button>
+        <span></span>
+        <button type="button" class="secondary-btn" data-close-dialog="taskDialog">取消</button>
+        <button class="primary-btn" value="save" type="submit">保存待办</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="noteDialog" class="modal small-modal">
+    <form method="dialog" id="noteForm">
+      <div class="modal-head"><div><span class="eyebrow">整理你的空间</span><h2 id="noteDialogTitle">新建便签</h2></div><button type="button" class="icon-btn" data-close-dialog="noteDialog" aria-label="关闭" data-icon="x"></button></div>
+      <label>便签名称<input id="newNoteTitle" maxlength="40" required placeholder="例如：工作、购物、灵感"></label>
+      <div class="color-field"><span>便签标识色</span><div class="color-options" id="noteColorOptions"></div></div>
+      <div class="modal-actions"><span></span><button type="button" class="secondary-btn" data-close-dialog="noteDialog">取消</button><button class="primary-btn" type="submit">完成</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog" class="modal settings-modal">
+    <form method="dialog">
+      <div class="modal-head settings-drag-handle" id="settingsDragHandle">
+        <div><span class="eyebrow">拖动这里移动面板</span><h2>偏好设置</h2></div>
+        <div class="settings-head-actions">
+          <button type="button" class="icon-btn" id="settingsMinimizeBtn" aria-label="最小化设置到任务栏" title="最小化到 Windows 任务栏" data-icon="minus"></button>
+          <button type="button" class="icon-btn" id="settingsMaximizeBtn" aria-label="最大化或还原设置" title="最大化或还原" data-icon="square"></button>
+          <button type="button" class="icon-btn" data-close-dialog="settingsDialog" aria-label="关闭" title="关闭设置" data-icon="x"></button>
+        </div>
+      </div>
+      <div class="widget-live-preview" id="widgetLivePreview" hidden aria-label="胶囊实时预览">
+        <div class="widget-preview-background" id="widgetPreviewBackground"></div>
+        <div class="widget-preview-progress"><span>68%</span></div>
+        <div class="widget-preview-check">✓</div>
+        <div class="widget-preview-copy"><small>轻笺预览</small><strong>整理今天的待办事项</strong></div>
+        <div class="widget-preview-position">1 / 3</div>
+        <div class="widget-preview-expand">⌃</div>
+      </div>
+      <div class="settings-scroll">
+        <section class="setting-section">
+          <h3>主页面外观</h3>
+          <div class="setting-card">
+            <div class="setting-row color-setting"><div><strong>主页面背景颜色</strong><small>只应用于完整便签窗口</small></div><input type="color" id="backgroundColor" aria-label="主页面背景颜色"></div>
+            <div class="background-presets" id="backgroundPresets"></div>
+            <div class="setting-row color-setting"><div><strong>主页面文字颜色</strong><small>深色图片可改用浅色文字，也可恢复自动</small></div><div class="text-color-control"><button type="button" id="resetMainTextColor">自动</button><input type="color" id="mainTextColor" aria-label="主页面文字颜色"></div></div>
+            <div class="setting-row image-setting"><div><strong>主页面背景图片</strong><small id="mainBackgroundImageName">未设置图片</small></div><div class="inline-actions"><button type="button" id="chooseMainBackground"><span data-icon="image"></span>选择</button><button type="button" id="clearMainBackground">清除</button></div></div>
+            <div class="setting-row"><div><strong>图片显示方式</strong><small>铺满、完整显示或平铺</small></div><select id="backgroundFit"><option value="cover">铺满窗口</option><option value="contain">完整显示</option><option value="repeat">平铺图片</option></select></div>
+            <div class="setting-row slider-row"><div><strong>图片透明度</strong><small>单独调整背景图片浓淡</small></div><output id="backgroundImageOpacityValue">55%</output></div>
+            <input class="range" id="backgroundImageOpacity" type="range" min="0" max="100" step="1">
+            <div class="setting-row slider-row"><div><strong>底色透明度</strong><small>只改变主页面背景颜色</small></div><output id="backgroundOpacityValue">96%</output></div>
+            <input class="range" id="backgroundOpacity" type="range" min="35" max="100" step="1">
+            <div class="setting-row slider-row"><div><strong>主窗口整体透明度</strong><small>同时改变主页面文字与控件</small></div><output id="windowOpacityValue">100%</output></div>
+            <input class="range" id="windowOpacity" type="range" min="55" max="100" step="1">
+            <div class="setting-row"><div><strong>界面模式</strong><small>跟随系统或固定明暗</small></div><select id="themeSelect"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></div>
+          </div>
+        </section>
+        <section class="setting-section">
+          <h3>窗口与系统</h3>
+          <div class="setting-card window-size-card">
+            <div class="setting-row slider-row"><div><strong>主页宽度</strong><small>也可直接拖动主页左右边缘或四角</small></div><output id="mainWindowWidthValue">920 px</output></div>
+            <input class="range" id="mainWindowWidth" type="range" min="520" max="1600" step="20">
+            <div class="setting-row slider-row"><div><strong>主页高度</strong><small>设置窗口可通过自身边缘自由缩放</small></div><output id="mainWindowHeightValue">680 px</output></div>
+            <input class="range" id="mainWindowHeight" type="range" min="480" max="1000" step="20">
+            <div class="window-size-presets" id="mainWindowSizePresets">
+              <button type="button" data-width="720" data-height="540">紧凑</button>
+              <button type="button" data-width="920" data-height="680">标准</button>
+              <button type="button" data-width="1200" data-height="780">宽屏</button>
+            </div>
+          </div>
+          <div class="setting-card switches">
+            <label class="setting-row"><div><strong>窗口始终置顶</strong><small>保持便签在其他窗口上方</small></div><span class="switch"><input type="checkbox" id="alwaysOnTop"><span></span></span></label>
+            <label class="setting-row"><div><strong>贴边半隐藏</strong><small>靠近屏幕边缘，移入自动展开</small></div><span class="switch"><input type="checkbox" id="edgeHide"><span></span></span></label>
+            <label class="setting-row"><div><strong>开机自动启动</strong><small>登录 Windows 后在后台启动</small></div><span class="switch"><input type="checkbox" id="autoLaunch"><span></span></span></label>
+            <div class="setting-row"><div><strong>点击关闭按钮时</strong><small>默认收成左下角小部件</small></div><select id="closeBehavior"><option value="widget">收成小部件</option><option value="tray">隐藏到托盘</option><option value="quit">完全退出</option></select></div>
+            <label class="setting-row"><div><strong>提醒声音</strong><small>系统通知到达时播放声音</small></div><span class="switch"><input type="checkbox" id="playSound"><span></span></span></label>
+            <div class="setting-row reminder-test-row"><div><strong>测试提醒</strong><small>立即检查通知、声音和任务栏提示</small></div><button type="button" class="setting-action-btn" id="testReminderBtn">立即测试</button></div>
+            <label class="setting-row"><div><strong>列表显示已完成</strong><small>可随时从筛选器单独查看</small></div><span class="switch"><input type="checkbox" id="showCompleted"><span></span></span></label>
+          </div>
+        </section>
+        <section class="setting-section">
+          <h3>小胶囊外观与行为</h3>
+          <div class="setting-card switches">
+            <div class="setting-row color-setting"><div><strong>胶囊背景颜色</strong><small>与主页面背景完全独立</small></div><input type="color" id="widgetBackgroundColor" aria-label="胶囊背景颜色"></div>
+            <div class="background-presets" id="widgetBackgroundPresets"></div>
+            <div class="setting-row color-setting"><div><strong>胶囊文字颜色</strong><small>单独控制胶囊与展开面板的文字</small></div><div class="text-color-control"><button type="button" id="resetWidgetTextColor">自动</button><input type="color" id="widgetTextColor" aria-label="胶囊文字颜色"></div></div>
+            <div class="setting-row image-setting"><div><strong>胶囊背景图片</strong><small id="widgetBackgroundImageName">未设置图片</small></div><div class="inline-actions"><button type="button" id="chooseWidgetBackground"><span data-icon="image"></span>选择</button><button type="button" id="clearWidgetBackground">清除</button></div></div>
+            <div class="setting-row"><div><strong>图片显示方式</strong><small>同时应用于胶囊和展开面板</small></div><select id="widgetBackgroundFit"><option value="cover">铺满窗口</option><option value="contain">完整显示</option><option value="repeat">平铺图片</option></select></div>
+            <div class="setting-row slider-row"><div><strong>胶囊图片透明度</strong><small>单独调整背景图片浓淡</small></div><output id="widgetBackgroundImageOpacityValue">55%</output></div>
+            <input class="range" id="widgetBackgroundImageOpacity" type="range" min="0" max="100" step="1">
+            <div class="setting-row slider-row"><div><strong>胶囊底色透明度</strong><small>不影响主页面背景</small></div><output id="widgetBackgroundOpacityValue">96%</output></div>
+            <input class="range" id="widgetBackgroundOpacity" type="range" min="20" max="100" step="1">
+            <div class="setting-row slider-row"><div><strong>胶囊整体透明度</strong><small>同时改变胶囊文字与控件</small></div><output id="widgetOpacityValue">96%</output></div>
+            <input class="range" id="widgetOpacity" type="range" min="65" max="100" step="1">
+            <label class="setting-row"><div><strong>收起时放到左下角</strong><small>手动拖动后自动关闭此项并记住新位置</small></div><span class="switch"><input type="checkbox" id="widgetDockLeft"><span></span></span></label>
+            <label class="setting-row"><div><strong>悬停自动展开</strong><small>鼠标移入胶囊后显示紧凑待办面板</small></div><span class="switch"><input type="checkbox" id="widgetAutoExpand"><span></span></span></label>
+            <label class="setting-row"><div><strong>记住小部件模式</strong><small>下次普通启动时仍保持为小框</small></div><span class="switch"><input type="checkbox" id="rememberWidgetMode"><span></span></span></label>
+            <div class="setting-row slider-row"><div><strong>小部件宽度</strong><small>可在 280–420 像素之间调整</small></div><output id="widgetWidthValue">330 px</output></div>
+            <input class="range" id="widgetWidth" type="range" min="280" max="420" step="10">
+          </div>
+        </section>
+        <section class="setting-section">
+          <h3>数据</h3>
+          <div class="setting-card data-card">
+            <div class="data-location"><div><strong>默认数据保存位置</strong><small id="dataDirectoryPath">正在读取…</small><small>便签、设置和背景图都会保存在这里，下次启动仍从此位置读取。目录丢失时会提示导入备份；取消导入则在原位置重新建立。</small></div></div>
+            <div class="data-actions">
+              <button type="button" id="chooseDataDirectoryBtn" class="data-directory-action"><span data-icon="folder"></span><span><strong>更改默认保存位置</strong><small>可选择任意磁盘或文件夹，当前数据会安全复制过去</small></span></button>
+              <button type="button" id="exportBtn"><span data-icon="download"></span><span><strong>导出备份</strong><small>默认保存到上述目录，也可另选位置</small></span></button>
+              <button type="button" id="importBtn"><span data-icon="upload"></span><span><strong>导入备份</strong><small>默认打开上述目录，也可选择其他备份</small></span></button>
+            </div>
+          </div>
+        </section>
+        <p class="version">轻笺 1.7.3 · 单一融合版 · 数据仅保存在本机</p>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+  <div class="mobile-backdrop" id="mobileBackdrop" hidden></div>
+  <div class="window-resize-handles" id="windowResizeHandles" aria-hidden="true">
+    <span class="window-resize-handle resize-n" data-resize-edge="n"></span>
+    <span class="window-resize-handle resize-s" data-resize-edge="s"></span>
+    <span class="window-resize-handle resize-e" data-resize-edge="e"></span>
+    <span class="window-resize-handle resize-w" data-resize-edge="w"></span>
+    <span class="window-resize-handle resize-ne" data-resize-edge="ne"></span>
+    <span class="window-resize-handle resize-nw" data-resize-edge="nw"></span>
+    <span class="window-resize-handle resize-se" data-resize-edge="se"></span>
+    <span class="window-resize-handle resize-sw" data-resize-edge="sw"></span>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

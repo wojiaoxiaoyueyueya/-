@@ -1,0 +1,47 @@
+{
+  "name": "lingjian-desktop",
+  "version": "1.7.3",
+  "description": "轻量、灵活、可提醒的桌面便签与待办应用",
+  "main": "src/main.js",
+  "author": "LingJian",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "render:icon": "electron scripts/render_icon.cjs",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js",
+    "test:ui": "node scripts/ui_smoke.mjs",
+    "build": "electron-builder --win portable",
+    "build:dir": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.lingjian.desktop",
+    "productName": "轻笺",
+    "electronDist": "node_modules/electron/dist",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "轻笺.exe"
+    }
+  }
+}
