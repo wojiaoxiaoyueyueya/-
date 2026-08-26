@@ -51,6 +51,17 @@ async function waitForTarget(predicate, timeout = 15000) {
   throw new Error(`Timed out waiting for page target: ${JSON.stringify(last.map(item => item.url))}`);
 }
 
+async function waitForTargetGone(predicate, timeout = 8000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try {
+      if (!(await targets()).some(predicate)) return true;
+    } catch { /* Electron may be replacing the window target. */ }
+    await delay(120);
+  }
+  return false;
+}
+
 async function connect(target) {
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
@@ -257,6 +268,56 @@ try {
   assert(savedAppearance.color.toLowerCase() === '#336699' && savedAppearance.opacity === 0.9, 'Final appearance values were not persisted');
   assert(savedAppearance.fullStateUpdates >= 1 && savedAppearance.fullStateUpdates <= 2, 'Appearance changes were saved more than once after input settled');
 
+  const guardedEditStart = await settings.evaluate(`(() => {
+    const control = document.querySelector('#windowOpacity');
+    control.focus();
+    control.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 17, button: 0 }));
+    control.value = '61';
+    control.dispatchEvent(new Event('input', { bubbles: true }));
+    const rect = control.getBoundingClientRect();
+    return {
+      value: control.value,
+      output: document.querySelector('#windowOpacityValue').value,
+      rangeGroups: document.querySelectorAll('.range-setting').length,
+      ungroupedRanges: [...document.querySelectorAll('input.range')].filter(item => !item.closest('.range-setting')).length,
+      appearance: getComputedStyle(control).webkitAppearance,
+      trackHeight: getComputedStyle(control, '::-webkit-slider-runnable-track').height,
+      controlHeight: rect.height,
+      pointerEvents: getComputedStyle(control).pointerEvents,
+      hitTarget: document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.id || ''
+    };
+  })()`);
+  assert(guardedEditStart.value === '61' && guardedEditStart.output === '61%', 'Window opacity did not enter the live editing state');
+  assert(guardedEditStart.rangeGroups === 9 && guardedEditStart.ungroupedRanges === 0, 'Settings sliders are not grouped with their labels and values');
+  assert(guardedEditStart.appearance === 'none', 'Settings slider still relies on the unstable native appearance');
+  assert(guardedEditStart.controlHeight === 24 && guardedEditStart.pointerEvents !== 'none' && guardedEditStart.hitTarget === 'windowOpacity',
+    `Custom slider is not interactive: ${JSON.stringify(guardedEditStart)}`);
+
+  await main.evaluate(`(async () => {
+    const staleState = structuredClone(state);
+    staleState.settings.windowOpacity = .99;
+    staleState.settings.showCompleted = !staleState.settings.showCompleted;
+    await window.lingjian.saveState(staleState);
+    return true;
+  })()`);
+  await delay(160);
+  const guardedDuringBroadcast = await settings.evaluate(`(() => ({
+    control: document.querySelector('#windowOpacity').value,
+    output: document.querySelector('#windowOpacityValue').value,
+    local: state.settings.windowOpacity
+  }))()`);
+  assert(guardedDuringBroadcast.control === '61' && guardedDuringBroadcast.output === '61%' && guardedDuringBroadcast.local === .61,
+    'A full-state broadcast overwrote the opacity currently being edited');
+  await settings.evaluate(`(() => {
+    const control = document.querySelector('#windowOpacity');
+    control.dispatchEvent(new Event('change', { bubbles: true }));
+    control.blur();
+    return true;
+  })()`);
+  await delay(430);
+  const guardedSaved = await main.evaluate(`state.settings.windowOpacity`);
+  assert(guardedSaved === .61, 'The guarded opacity edit was not persisted after the state race');
+
   const settingsSizes = [];
   for (const [width, height] of [[580, 760], [380, 500], [320, 360]]) {
     const result = await settings.evaluate(`(async () => {
@@ -265,11 +326,16 @@ try {
       const dialog = document.querySelector('#settingsDialog').getBoundingClientRect();
       const scroller = document.querySelector('.settings-scroll');
       const badRows = [...document.querySelectorAll('.setting-row')].filter(row => row.scrollWidth > row.clientWidth + 1).length;
+      const badRanges = [...document.querySelectorAll('.range-setting')].filter(group => {
+        const range = group.querySelector('.range');
+        return !range || group.scrollWidth > group.clientWidth + 1 || range.getBoundingClientRect().width < 180;
+      }).length;
       return {
         size: [innerWidth, innerHeight],
         dialog: [dialog.left, dialog.top, dialog.right, dialog.bottom],
         scroll: [document.documentElement.clientWidth, document.documentElement.scrollWidth],
         badRows,
+        badRanges,
         scrollbar: getComputedStyle(scroller, '::-webkit-scrollbar').width,
         minimizeButton: Boolean(document.querySelector('#settingsMinimizeBtn')),
         capsuleClass: document.querySelector('#settingsDialog').classList.contains('collapsed')
@@ -280,6 +346,7 @@ try {
     assert(result.dialog[2] === width && result.dialog[3] === height, `Settings dialog does not fill ${width}x${height}`);
     assert(result.scroll[0] === result.scroll[1], `Settings page overflows horizontally at ${width}x${height}`);
     assert(result.badRows === 0, `Settings rows overflow at ${width}x${height}`);
+    assert(result.badRanges === 0, `Settings sliders are misaligned at ${width}x${height}`);
     assert(result.scrollbar === '5px', `Settings scrollbar is not the slim 5px style at ${width}x${height}`);
     assert(result.minimizeButton && !result.capsuleClass, 'Settings minimize still uses the old capsule behavior');
     settingsSizes.push(result);
@@ -292,6 +359,36 @@ try {
   const restoredSettings = await settings.evaluate(`({ size: [innerWidth, innerHeight], collapsed: document.querySelector('#settingsDialog').classList.contains('collapsed') })`);
   assert(restoredSettings.size[0] >= 320 && restoredSettings.size[1] >= 360, 'Minimized settings restored as an empty capsule');
   assert(!restoredSettings.collapsed, 'Minimized settings restored with the old collapsed class');
+
+  const settingsReopenCycles = [];
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    await settings.evaluate(`(() => { setTimeout(() => window.lingjian.settingsWindowAction('close'), 20); return true; })()`);
+    settings.socket.close();
+    assert(await waitForTargetGone(item => item.type === 'page' && item.url.includes('mode=settings')), 'Settings target did not close cleanly');
+    await main.evaluate(`window.lingjian.openSettingsWindow()`);
+    const reopenedTarget = await waitForTarget(item => item.type === 'page' && item.url.includes('mode=settings'));
+    settings = await connect(reopenedTarget);
+    await waitForValue(settings, `Boolean(window.lingjian && document.querySelector('#settingsDialog')?.open)`, Boolean);
+    const reopened = await settings.evaluate(`(() => {
+      const ranges = [...document.querySelectorAll('input.range')];
+      const selects = [...document.querySelectorAll('.settings-scroll select')];
+      const opacity = document.querySelector('#windowOpacity');
+      const rect = opacity.getBoundingClientRect();
+      return {
+        ranges: ranges.length,
+        groupedRanges: ranges.filter(item => item.closest('.range-setting')).length,
+        rangeValuesReady: ranges.every(item => item.value !== '' && Number.isFinite(Number(item.value))),
+        selectsReady: selects.every(item => item.value !== '' && item.selectedIndex >= 0),
+        horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        opacityHitTarget: document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.id || ''
+      };
+    })()`);
+    assert(reopened.ranges === 9 && reopened.groupedRanges === 9 && reopened.rangeValuesReady,
+      `Settings sliders were corrupted after reopen cycle ${cycle + 1}`);
+    assert(reopened.selectsReady && reopened.horizontalOverflow === 0 && reopened.opacityHitTarget === 'windowOpacity',
+      `Settings controls were misaligned after reopen cycle ${cycle + 1}`);
+    settingsReopenCycles.push(reopened);
+  }
 
   const compactMain = await main.evaluate(`(async () => {
     await window.lingjian.widgetAction('exit');
@@ -347,8 +444,10 @@ try {
     reminderTest,
     scheduledReminder,
     appearancePerformance: { appearanceFrames, liveAppearance, savedAppearance },
-    settingsSizes: settingsSizes.map(item => ({ size: item.size, scroll: item.scroll, badRows: item.badRows, scrollbar: item.scrollbar })),
+    settingsStateRace: { guardedEditStart, guardedDuringBroadcast, guardedSaved },
+    settingsSizes: settingsSizes.map(item => ({ size: item.size, scroll: item.scroll, badRows: item.badRows, badRanges: item.badRanges, scrollbar: item.scrollbar })),
     restoredSettings,
+    settingsReopenCycles,
     compactMain,
     widget,
     passed: true

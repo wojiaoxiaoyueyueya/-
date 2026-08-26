@@ -209,22 +209,17 @@
             <div class="setting-row color-setting"><div><strong>主页面文字颜色</strong><small>深色图片可改用浅色文字，也可恢复自动</small></div><div class="text-color-control"><button type="button" id="resetMainTextColor">自动</button><input type="color" id="mainTextColor" aria-label="主页面文字颜色"></div></div>
             <div class="setting-row image-setting"><div><strong>主页面背景图片</strong><small id="mainBackgroundImageName">未设置图片</small></div><div class="inline-actions"><button type="button" id="chooseMainBackground"><span data-icon="image"></span>选择</button><button type="button" id="clearMainBackground">清除</button></div></div>
             <div class="setting-row"><div><strong>图片显示方式</strong><small>铺满、完整显示或平铺</small></div><select id="backgroundFit"><option value="cover">铺满窗口</option><option value="contain">完整显示</option><option value="repeat">平铺图片</option></select></div>
-            <div class="setting-row slider-row"><div><strong>图片透明度</strong><small>单独调整背景图片浓淡</small></div><output id="backgroundImageOpacityValue">55%</output></div>
-            <input class="range" id="backgroundImageOpacity" type="range" min="0" max="100" step="1">
-            <div class="setting-row slider-row"><div><strong>底色透明度</strong><small>只改变主页面背景颜色</small></div><output id="backgroundOpacityValue">96%</output></div>
-            <input class="range" id="backgroundOpacity" type="range" min="35" max="100" step="1">
-            <div class="setting-row slider-row"><div><strong>主窗口整体透明度</strong><small>同时改变主页面文字与控件</small></div><output id="windowOpacityValue">100%</output></div>
-            <input class="range" id="windowOpacity" type="range" min="55" max="100" step="1">
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>图片透明度</strong><small>单独调整背景图片浓淡</small></div><output id="backgroundImageOpacityValue">55%</output></div><input class="range" id="backgroundImageOpacity" type="range" min="0" max="100" step="1"></div>
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>底色透明度</strong><small>只改变主页面背景颜色</small></div><output id="backgroundOpacityValue">96%</output></div><input class="range" id="backgroundOpacity" type="range" min="35" max="100" step="1"></div>
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>主窗口整体透明度</strong><small>同时改变主页面文字与控件</small></div><output id="windowOpacityValue">100%</output></div><input class="range" id="windowOpacity" type="range" min="55" max="100" step="1"></div>
             <div class="setting-row"><div><strong>界面模式</strong><small>跟随系统或固定明暗</small></div><select id="themeSelect"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></div>
           </div>
         </section>
         <section class="setting-section">
           <h3>窗口与系统</h3>
           <div class="setting-card window-size-card">
-            <div class="setting-row slider-row"><div><strong>主页宽度</strong><small>也可直接拖动主页左右边缘或四角</small></div><output id="mainWindowWidthValue">920 px</output></div>
-            <input class="range" id="mainWindowWidth" type="range" min="520" max="1600" step="20">
-            <div class="setting-row slider-row"><div><strong>主页高度</strong><small>设置窗口可通过自身边缘自由缩放</small></div><output id="mainWindowHeightValue">680 px</output></div>
-            <input class="range" id="mainWindowHeight" type="range" min="480" max="1000" step="20">
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>主页宽度</strong><small>也可直接拖动主页左右边缘或四角</small></div><output id="mainWindowWidthValue">920 px</output></div><input class="range" id="mainWindowWidth" type="range" min="520" max="1600" step="20"></div>
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>主页高度</strong><small>设置窗口可通过自身边缘自由缩放</small></div><output id="mainWindowHeightValue">680 px</output></div><input class="range" id="mainWindowHeight" type="range" min="480" max="1000" step="20"></div>
             <div class="window-size-presets" id="mainWindowSizePresets">
               <button type="button" data-width="720" data-height="540">紧凑</button>
               <button type="button" data-width="920" data-height="680">标准</button>
@@ -249,17 +244,13 @@
             <div class="setting-row color-setting"><div><strong>胶囊文字颜色</strong><small>单独控制胶囊与展开面板的文字</small></div><div class="text-color-control"><button type="button" id="resetWidgetTextColor">自动</button><input type="color" id="widgetTextColor" aria-label="胶囊文字颜色"></div></div>
             <div class="setting-row image-setting"><div><strong>胶囊背景图片</strong><small id="widgetBackgroundImageName">未设置图片</small></div><div class="inline-actions"><button type="button" id="chooseWidgetBackground"><span data-icon="image"></span>选择</button><button type="button" id="clearWidgetBackground">清除</button></div></div>
             <div class="setting-row"><div><strong>图片显示方式</strong><small>同时应用于胶囊和展开面板</small></div><select id="widgetBackgroundFit"><option value="cover">铺满窗口</option><option value="contain">完整显示</option><option value="repeat">平铺图片</option></select></div>
-            <div class="setting-row slider-row"><div><strong>胶囊图片透明度</strong><small>单独调整背景图片浓淡</small></div><output id="widgetBackgroundImageOpacityValue">55%</output></div>
-            <input class="range" id="widgetBackgroundImageOpacity" type="range" min="0" max="100" step="1">
-            <div class="setting-row slider-row"><div><strong>胶囊底色透明度</strong><small>不影响主页面背景</small></div><output id="widgetBackgroundOpacityValue">96%</output></div>
-            <input class="range" id="widgetBackgroundOpacity" type="range" min="20" max="100" step="1">
-            <div class="setting-row slider-row"><div><strong>胶囊整体透明度</strong><small>同时改变胶囊文字与控件</small></div><output id="widgetOpacityValue">96%</output></div>
-            <input class="range" id="widgetOpacity" type="range" min="65" max="100" step="1">
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>胶囊图片透明度</strong><small>单独调整背景图片浓淡</small></div><output id="widgetBackgroundImageOpacityValue">55%</output></div><input class="range" id="widgetBackgroundImageOpacity" type="range" min="0" max="100" step="1"></div>
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>胶囊底色透明度</strong><small>不影响主页面背景</small></div><output id="widgetBackgroundOpacityValue">96%</output></div><input class="range" id="widgetBackgroundOpacity" type="range" min="20" max="100" step="1"></div>
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>胶囊整体透明度</strong><small>同时改变胶囊文字与控件</small></div><output id="widgetOpacityValue">96%</output></div><input class="range" id="widgetOpacity" type="range" min="65" max="100" step="1"></div>
             <label class="setting-row"><div><strong>收起时放到左下角</strong><small>手动拖动后自动关闭此项并记住新位置</small></div><span class="switch"><input type="checkbox" id="widgetDockLeft"><span></span></span></label>
             <label class="setting-row"><div><strong>悬停自动展开</strong><small>鼠标移入胶囊后显示紧凑待办面板</small></div><span class="switch"><input type="checkbox" id="widgetAutoExpand"><span></span></span></label>
             <label class="setting-row"><div><strong>记住小部件模式</strong><small>下次普通启动时仍保持为小框</small></div><span class="switch"><input type="checkbox" id="rememberWidgetMode"><span></span></span></label>
-            <div class="setting-row slider-row"><div><strong>小部件宽度</strong><small>可在 280–420 像素之间调整</small></div><output id="widgetWidthValue">330 px</output></div>
-            <input class="range" id="widgetWidth" type="range" min="280" max="420" step="10">
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>小部件宽度</strong><small>可在 280–420 像素之间调整</small></div><output id="widgetWidthValue">330 px</output></div><input class="range" id="widgetWidth" type="range" min="280" max="420" step="10"></div>
           </div>
         </section>
         <section class="setting-section">
@@ -273,7 +264,7 @@
             </div>
           </div>
         </section>
-        <p class="version">轻笺 1.7.3 · 单一融合版 · 数据仅保存在本机</p>
+        <p class="version">轻笺 1.7.4 · 单一融合版 · 数据仅保存在本机</p>
       </div>
     </form>
   </dialog>

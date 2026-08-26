@@ -73,6 +73,9 @@ let appearanceFrame = null;
 let appearanceAdjustingTimer = null;
 let pendingAppearancePatch = {};
 let pendingWidgetPreview = false;
+let backgroundLoadSequence = 0;
+const dirtySettingKeys = new Set();
+const activeSettingControls = new Set();
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -327,28 +330,32 @@ function syncSettingControls() {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const dark = s.theme === 'dark' || (s.theme === 'system' && prefersDark);
   const automaticText = dark ? '#F1F1F4' : '#292B32';
-  $('#backgroundColor').value = s.background;
-  $('#widgetBackgroundColor').value = s.widgetBackground || s.background;
-  $('#mainTextColor').value = s.mainTextColor || automaticText;
-  $('#widgetTextColor').value = s.widgetTextColor || automaticText;
+  const setValue = (id, value) => {
+    const control = $(`#${id}`);
+    if (control && !activeSettingControls.has(id)) control.value = String(value);
+  };
+  setValue('backgroundColor', s.background);
+  setValue('widgetBackgroundColor', s.widgetBackground || s.background);
+  setValue('mainTextColor', s.mainTextColor || automaticText);
+  setValue('widgetTextColor', s.widgetTextColor || automaticText);
   $('#resetMainTextColor').classList.toggle('active', !s.mainTextColor);
   $('#resetWidgetTextColor').classList.toggle('active', !s.widgetTextColor);
-  $('#backgroundOpacity').value = Math.round(s.backgroundOpacity * 100);
-  $('#backgroundImageOpacity').value = Math.round(s.backgroundImageOpacity * 100);
-  $('#windowOpacity').value = Math.round(s.windowOpacity * 100);
+  setValue('backgroundOpacity', Math.round(s.backgroundOpacity * 100));
+  setValue('backgroundImageOpacity', Math.round(s.backgroundImageOpacity * 100));
+  setValue('windowOpacity', Math.round(s.windowOpacity * 100));
   $('#backgroundOpacityValue').value = `${Math.round(s.backgroundOpacity * 100)}%`;
   $('#backgroundImageOpacityValue').value = `${Math.round(s.backgroundImageOpacity * 100)}%`;
   $('#windowOpacityValue').value = `${Math.round(s.windowOpacity * 100)}%`;
-  $('#backgroundFit').value = s.backgroundFit;
-  $('#widgetBackgroundFit').value = s.widgetBackgroundFit;
+  setValue('backgroundFit', s.backgroundFit);
+  setValue('widgetBackgroundFit', s.widgetBackgroundFit);
   $('#mainBackgroundImageName').textContent = s.backgroundImageName || '未设置图片';
   $('#widgetBackgroundImageName').textContent = s.widgetBackgroundImageName || '未设置图片';
-  $('#themeSelect').value = s.theme;
-  $('#closeBehavior').value = s.closeBehavior || 'widget';
-  $('#widgetWidth').value = s.widgetWidth;
-  $('#widgetOpacity').value = Math.round(s.widgetOpacity * 100);
-  $('#widgetBackgroundOpacity').value = Math.round(s.widgetBackgroundOpacity * 100);
-  $('#widgetBackgroundImageOpacity').value = Math.round(s.widgetBackgroundImageOpacity * 100);
+  setValue('themeSelect', s.theme);
+  setValue('closeBehavior', s.closeBehavior || 'widget');
+  setValue('widgetWidth', s.widgetWidth);
+  setValue('widgetOpacity', Math.round(s.widgetOpacity * 100));
+  setValue('widgetBackgroundOpacity', Math.round(s.widgetBackgroundOpacity * 100));
+  setValue('widgetBackgroundImageOpacity', Math.round(s.widgetBackgroundImageOpacity * 100));
   $('#widgetWidthValue').value = `${s.widgetWidth} px`;
   $('#widgetOpacityValue').value = `${Math.round(s.widgetOpacity * 100)}%`;
   $('#widgetBackgroundOpacityValue').value = `${Math.round(s.widgetBackgroundOpacity * 100)}%`;
@@ -357,7 +364,7 @@ function syncSettingControls() {
   syncMainWindowSize();
   ['alwaysOnTop', 'edgeHide', 'autoLaunch', 'playSound', 'showCompleted', 'widgetDockLeft', 'widgetAutoExpand', 'rememberWidgetMode'].forEach(key => {
     const control = $(`#${key}`);
-    if (control) control.checked = Boolean(s[key]);
+    if (control && !activeSettingControls.has(key)) control.checked = Boolean(s[key]);
   });
   renderBackgroundPresets();
 }
@@ -370,10 +377,20 @@ function save(render = true, delay = 120) {
   }
   clearTimeout(saveTimeout);
   saveTimeout = setTimeout(async () => {
-    if (settingsWindowMode) await api.saveSettings(state.settings);
-    else await api.saveState(state);
-    $('#saveStatus').textContent = '已保存';
-    $('#saveStatus').classList.remove('saving');
+    const settingsSnapshot = { ...state.settings };
+    try {
+      if (settingsWindowMode) await api.saveSettings(settingsSnapshot);
+      else await api.saveState(state);
+      for (const key of [...dirtySettingKeys]) {
+        if (Object.is(state.settings[key], settingsSnapshot[key])) dirtySettingKeys.delete(key);
+      }
+      $('#saveStatus').textContent = '已保存';
+    } catch (error) {
+      console.error('保存设置失败:', error);
+      $('#saveStatus').textContent = '保存失败';
+    } finally {
+      $('#saveStatus').classList.remove('saving');
+    }
   }, delay);
 }
 
@@ -384,6 +401,7 @@ function markAppearanceAdjusting() {
 }
 
 function queueAppearancePreview(patch, { widgetPreview = false } = {}) {
+  Object.keys(patch).forEach(key => dirtySettingKeys.add(key));
   Object.assign(state.settings, patch);
   Object.assign(pendingAppearancePatch, patch);
   pendingWidgetPreview ||= widgetPreview;
@@ -778,12 +796,31 @@ async function clearBackground(target) {
 }
 
 async function loadBackgroundImages() {
+  const sequence = ++backgroundLoadSequence;
   const [mainImage, widgetImage] = await Promise.all([
     api.loadBackgroundImage('main'),
     api.loadBackgroundImage('widget')
   ]);
+  if (sequence !== backgroundLoadSequence) return false;
   backgroundImageData.main = mainImage?.dataUrl || '';
   backgroundImageData.widget = widgetImage?.dataUrl || '';
+  return true;
+}
+
+function bindSettingsControlGuards() {
+  $$('.settings-scroll input, .settings-scroll select').forEach(control => {
+    if (!control.id) return;
+    const begin = () => activeSettingControls.add(control.id);
+    const finish = () => {
+      activeSettingControls.delete(control.id);
+      requestAnimationFrame(syncSettingControls);
+    };
+    control.addEventListener('pointerdown', begin);
+    control.addEventListener('focus', begin);
+    control.addEventListener('change', finish);
+    control.addEventListener('pointercancel', finish);
+    control.addEventListener('blur', finish);
+  });
 }
 
 async function changeSystemSetting(key, value) {
@@ -856,6 +893,7 @@ function scheduleWidgetAutoCollapse(delay = 520) {
 function bindEvents() {
   bindSettingsPanelDrag();
   bindWindowResizeHandles();
+  bindSettingsControlGuards();
   window.addEventListener('resize', keepSettingsPanelInView);
   document.addEventListener('click', event => {
     if (!event.target.closest('#noteMenu') && !event.target.closest('#noteMenuBtn')) $('#noteMenu').hidden = true;
@@ -1326,8 +1364,14 @@ async function init() {
     if (task) setTimeout(() => openTaskDialog(task), 100);
   });
   api.onStateUpdated(async value => {
+    const localSettings = {};
+    if (settingsWindowMode) {
+      for (const key of dirtySettingKeys) localSettings[key] = state.settings[key];
+    }
     state = value;
-    await loadBackgroundImages();
+    if (settingsWindowMode) Object.assign(state.settings, localSettings);
+    const loaded = await loadBackgroundImages();
+    if (!loaded) return;
     renderAll();
   });
   api.onMainBounds(bounds => syncMainWindowSize(bounds));
