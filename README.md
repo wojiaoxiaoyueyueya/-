@@ -4,9 +4,9 @@
 
 ## 直接下载
 
-[下载轻笺 1.7.4（Windows 免安装版）](https://github.com/wojiaoxiaoyueyueya/-/releases/latest/download/%E8%BD%BB%E7%AC%BA.exe)
+[下载轻笺 1.7.4（Windows 免安装版）](https://github.com/wojiaoxiaoyueyueya/-/releases/latest/download/LingJian-1.7.4.exe)
 
-下载 `轻笺.exe` 后双击即可运行，不需要安装，也不需要另外下载源码或 Node.js。1.7.4 文件 SHA-256：`A572896F13DCE67B4850D07681DDBD0703F76BB6CC62FD27D5064D1B6F951BA0`。
+下载 `LingJian-1.7.4.exe` 后双击即可运行，不需要安装，也不需要另外下载源码或 Node.js。它就是完整的“轻笺”程序。1.7.4 文件 SHA-256：`A572896F13DCE67B4850D07681DDBD0703F76BB6CC62FD27D5064D1B6F951BA0`。
 
 ## 功能
 
