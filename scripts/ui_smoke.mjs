@@ -31,13 +31,14 @@ child.stderr.on('data', chunk => { childLog += chunk.toString(); });
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
+const startupTimeout = packaged ? 60000 : 15000;
 
 async function targets() {
   const response = await fetch(`http://127.0.0.1:${port}/json/list`);
   return response.json();
 }
 
-async function waitForTarget(predicate, timeout = 15000) {
+async function waitForTarget(predicate, timeout = startupTimeout) {
   const deadline = Date.now() + timeout;
   let last = [];
   while (Date.now() < deadline) {
@@ -117,7 +118,8 @@ try {
   const mainTarget = await waitForTarget(item => item.type === 'page' && /index\.html(?:$|#)/.test(item.url));
   main = await connect(mainTarget);
 
-  const mainInitial = await waitForValue(main, `(() => {
+  const mainInitial = await waitForValue(main, `(async () => {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const shellNode = document.querySelector('.app-shell');
     if (!window.lingjian || !document.querySelector('#settingsBtn') || !shellNode) return null;
     const shell = shellNode.getBoundingClientRect();
@@ -128,10 +130,12 @@ try {
       resizeHandles: document.querySelectorAll('.window-resize-handle').length,
       duplicateIds: [...document.querySelectorAll('[id]')].map(node => node.id).filter((id, index, all) => all.indexOf(id) !== index)
     };
-  })()`, Boolean);
+  })()`, value => Boolean(value?.ready && value.shell[0] === 0 && value.shell[1] === 0));
   assert(mainInitial.ready, 'Main renderer did not initialize');
-  assert(mainInitial.shell[0] === 0 && mainInitial.shell[1] === 0, 'Main shell still has an outer transparent inset');
-  assert(mainInitial.shell[2] === mainInitial.size[0] && mainInitial.shell[3] === mainInitial.size[1], 'Main shell does not fill its window');
+  assert(mainInitial.shell[0] === 0 && mainInitial.shell[1] === 0,
+    `Main shell still has an outer transparent inset: ${JSON.stringify(mainInitial)}`);
+  assert(mainInitial.shell[2] === mainInitial.size[0] && mainInitial.shell[3] === mainInitial.size[1],
+    `Main shell does not fill its window: ${JSON.stringify(mainInitial)}`);
   assert(mainInitial.resizeHandles === 8, 'Main window is missing resize handles');
   assert(mainInitial.duplicateIds.length === 0, `Duplicate HTML ids: ${mainInitial.duplicateIds.join(', ')}`);
 
@@ -151,6 +155,88 @@ try {
   assert(Array.isArray(recoveredState.notes) && recoveredState.notes.length > 0, 'Cancel-recovery path did not recreate state.json');
   assert(dataDirectoryInfo.explanation.includes('目录丢失时会提示导入备份'), 'Settings page does not explain missing-directory recovery');
   assert(dataDirectoryInfo.chooseButton.includes('更改默认保存位置'), 'Settings page is missing the data-directory chooser');
+
+  const settingsNavigation = await settings.evaluate(`(() => {
+    const result = [];
+    for (const button of document.querySelectorAll('[data-settings-section]')) {
+      button.click();
+      const visible = [...document.querySelectorAll('[data-settings-panel]')].filter(panel => !panel.hidden);
+      const scroller = document.querySelector('#settingsScroll');
+      result.push({
+        section: button.dataset.settingsSection,
+        active: button.classList.contains('active'),
+        visible: visible.map(panel => panel.dataset.settingsPanel),
+        overflow: scroller.scrollWidth - scroller.clientWidth
+      });
+    }
+    document.querySelector('[data-settings-section="appearance"]').click();
+    return result;
+  })()`);
+  assert(settingsNavigation.length === 4 && settingsNavigation.every(item => item.active && item.visible.length === 1 && item.visible[0] === item.section),
+    'Settings category navigation did not isolate each panel');
+  assert(settingsNavigation.every(item => item.overflow === 0), 'A settings category overflows horizontally');
+
+  const widgetPreviewImage = path.join(selectedDataDirectory, 'backgrounds', 'widget-preview-test.bmp');
+  await fs.mkdir(path.dirname(widgetPreviewImage), { recursive: true });
+  const widgetPreviewBitmap = Buffer.alloc(58);
+  widgetPreviewBitmap.write('BM', 0, 2, 'ascii');
+  widgetPreviewBitmap.writeUInt32LE(58, 2);
+  widgetPreviewBitmap.writeUInt32LE(54, 10);
+  widgetPreviewBitmap.writeUInt32LE(40, 14);
+  widgetPreviewBitmap.writeInt32LE(1, 18);
+  widgetPreviewBitmap.writeInt32LE(1, 22);
+  widgetPreviewBitmap.writeUInt16LE(1, 26);
+  widgetPreviewBitmap.writeUInt16LE(24, 28);
+  widgetPreviewBitmap.writeUInt32LE(4, 34);
+  widgetPreviewBitmap.set([0x33, 0x99, 0xff, 0x00], 54);
+  await fs.writeFile(widgetPreviewImage, widgetPreviewBitmap);
+  const widgetPreviewPathLiteral = JSON.stringify(widgetPreviewImage);
+  const widgetPreviewResult = await settings.evaluate(`(async () => {
+    state.settings.widgetBackgroundImagePath = ${widgetPreviewPathLiteral};
+    state.settings.widgetBackgroundImageName = 'widget-preview-test.bmp';
+    state.settings.widgetBackgroundImageOpacity = .84;
+    state.settings.widgetBackground = '#112233';
+    state.settings.widgetBackgroundOpacity = 1;
+    state.settings.widgetOpacity = 1;
+    await window.lingjian.saveSettings({ ...state.settings });
+    document.querySelector('[data-settings-section="widget"]').click();
+    const deadline = performance.now() + 3000;
+    while (document.querySelector('#widgetLivePreview').dataset.imageState !== 'loaded' && performance.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+    showWidgetPreview(0);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const preview = document.querySelector('#widgetLivePreview');
+    const layer = document.querySelector('#widgetPreviewBackground');
+    const beforeImage = layer.style.backgroundImage;
+    const color = document.querySelector('#widgetBackgroundColor');
+    color.value = '#884422';
+    color.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const result = {
+      imageState: preview.dataset.imageState,
+      visible: !preview.hidden && preview.classList.contains('visible'),
+      beforeImage,
+      afterImage: layer.style.backgroundImage,
+      imageOpacity: layer.style.opacity,
+      imageSize: layer.style.backgroundSize,
+      selectedColor: state.settings.widgetBackground,
+      backgroundColor: getComputedStyle(preview).backgroundColor
+    };
+    hideWidgetPreviewImmediately();
+    document.querySelector('[data-settings-section="appearance"]').click();
+    return result;
+  })()`);
+  assert(widgetPreviewResult.imageState === 'loaded' && widgetPreviewResult.visible,
+    `Widget preview did not report a loaded visible image: ${JSON.stringify(widgetPreviewResult)}`);
+  assert(widgetPreviewResult.beforeImage.startsWith('url(') && widgetPreviewResult.beforeImage.includes('data:image/bmp;base64,'),
+    'Widget preview did not render the configured image data');
+  assert(widgetPreviewResult.afterImage === widgetPreviewResult.beforeImage,
+    'Changing the widget background color removed the preview image');
+  assert(widgetPreviewResult.imageOpacity === '0.84' && widgetPreviewResult.imageSize === 'cover',
+    `Widget preview image settings differ from the real widget: ${JSON.stringify(widgetPreviewResult)}`);
+  assert(widgetPreviewResult.selectedColor.toLowerCase() === '#884422', 'Widget preview background color did not update in real time');
+  console.log('[ui-smoke] 胶囊图片预览通过');
 
   const reminderTest = await settings.evaluate(`(async () => {
     const result = await window.lingjian.testReminder();
@@ -196,6 +282,7 @@ try {
   assert(scheduledReminder.eventCount === 1, 'Due reminder was not fired exactly once by the scheduler');
   assert(scheduledReminder.enabledAfterFire === false, 'One-time reminder was not disabled after delivery');
   assert(Boolean(scheduledReminder.marker), 'Delivered reminder marker was not persisted');
+  console.log('[ui-smoke] 提醒测试通过');
 
   const darkSelect = await settings.evaluate(`(async () => {
     const select = document.querySelector('#themeSelect');
@@ -278,6 +365,7 @@ try {
     return {
       value: control.value,
       output: document.querySelector('#windowOpacityValue').value,
+      visualProgress: control.style.getPropertyValue('--range-progress'),
       rangeGroups: document.querySelectorAll('.range-setting').length,
       ungroupedRanges: [...document.querySelectorAll('input.range')].filter(item => !item.closest('.range-setting')).length,
       appearance: getComputedStyle(control).webkitAppearance,
@@ -288,6 +376,8 @@ try {
     };
   })()`);
   assert(guardedEditStart.value === '61' && guardedEditStart.output === '61%', 'Window opacity did not enter the live editing state');
+  assert(Number.parseFloat(guardedEditStart.visualProgress) > 13 && Number.parseFloat(guardedEditStart.visualProgress) < 14,
+    'Window opacity slider did not repaint its progress in real time');
   assert(guardedEditStart.rangeGroups === 9 && guardedEditStart.ungroupedRanges === 0, 'Settings sliders are not grouped with their labels and values');
   assert(guardedEditStart.appearance === 'none', 'Settings slider still relies on the unstable native appearance');
   assert(guardedEditStart.controlHeight === 24 && guardedEditStart.pointerEvents !== 'none' && guardedEditStart.hitTarget === 'windowOpacity',
@@ -317,21 +407,26 @@ try {
   await delay(430);
   const guardedSaved = await main.evaluate(`state.settings.windowOpacity`);
   assert(guardedSaved === .61, 'The guarded opacity edit was not persisted after the state race');
+  console.log('[ui-smoke] 外观与状态保护测试通过');
 
   const settingsSizes = [];
-  for (const [width, height] of [[580, 760], [380, 500], [320, 360]]) {
+  for (const [width, height] of [[720, 760], [560, 520], [460, 420]]) {
     const result = await settings.evaluate(`(async () => {
-      await window.lingjian.settingsWindowAction('size', { width: ${width}, height: ${height} });
-      await new Promise(resolve => setTimeout(resolve, 220));
+      const requestedBounds = await window.lingjian.settingsWindowAction('size', { width: ${width}, height: ${height} });
+      const resizeDeadline = performance.now() + 3000;
+      while ((innerWidth !== ${width} || innerHeight !== ${height}) && performance.now() < resizeDeadline) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
       const dialog = document.querySelector('#settingsDialog').getBoundingClientRect();
       const scroller = document.querySelector('.settings-scroll');
       const badRows = [...document.querySelectorAll('.setting-row')].filter(row => row.scrollWidth > row.clientWidth + 1).length;
-      const badRanges = [...document.querySelectorAll('.range-setting')].filter(group => {
+      const badRanges = [...document.querySelectorAll('[data-settings-panel]:not([hidden]) .range-setting')].filter(group => {
         const range = group.querySelector('.range');
         return !range || group.scrollWidth > group.clientWidth + 1 || range.getBoundingClientRect().width < 180;
       }).length;
       return {
         size: [innerWidth, innerHeight],
+        requestedBounds,
         dialog: [dialog.left, dialog.top, dialog.right, dialog.bottom],
         scroll: [document.documentElement.clientWidth, document.documentElement.scrollWidth],
         badRows,
@@ -341,7 +436,8 @@ try {
         capsuleClass: document.querySelector('#settingsDialog').classList.contains('collapsed')
       };
     })()`);
-    assert(result.size[0] === width && result.size[1] === height, `Settings size did not reach ${width}x${height}`);
+    assert(result.size[0] === width && result.size[1] === height,
+      `Settings size did not reach ${width}x${height}: ${JSON.stringify(result)}`);
     assert(result.dialog[0] === 0 && result.dialog[1] === 0, `Settings dialog has an outer inset at ${width}x${height}`);
     assert(result.dialog[2] === width && result.dialog[3] === height, `Settings dialog does not fill ${width}x${height}`);
     assert(result.scroll[0] === result.scroll[1], `Settings page overflows horizontally at ${width}x${height}`);
@@ -351,13 +447,14 @@ try {
     assert(result.minimizeButton && !result.capsuleClass, 'Settings minimize still uses the old capsule behavior');
     settingsSizes.push(result);
   }
+  console.log('[ui-smoke] 设置窗口尺寸测试通过');
 
   await settings.evaluate(`window.lingjian.settingsWindowAction('minimize')`);
   await delay(260);
   await main.evaluate(`window.lingjian.openSettingsWindow()`);
   await delay(260);
   const restoredSettings = await settings.evaluate(`({ size: [innerWidth, innerHeight], collapsed: document.querySelector('#settingsDialog').classList.contains('collapsed') })`);
-  assert(restoredSettings.size[0] >= 320 && restoredSettings.size[1] >= 360, 'Minimized settings restored as an empty capsule');
+  assert(restoredSettings.size[0] >= 460 && restoredSettings.size[1] >= 420, 'Minimized settings restored as an empty capsule');
   assert(!restoredSettings.collapsed, 'Minimized settings restored with the old collapsed class');
 
   const settingsReopenCycles = [];
@@ -389,10 +486,11 @@ try {
       `Settings controls were misaligned after reopen cycle ${cycle + 1}`);
     settingsReopenCycles.push(reopened);
   }
+  console.log('[ui-smoke] 设置窗口重复打开测试通过');
 
   const compactMain = await main.evaluate(`(async () => {
     await window.lingjian.widgetAction('exit');
-    await window.lingjian.setMainWindowSize({ width: 520, height: 480 });
+    await window.lingjian.setMainWindowSize({ width: 420, height: 380 });
     await new Promise(resolve => setTimeout(resolve, 220));
     const shell = document.querySelector('.app-shell').getBoundingClientRect();
     return {
@@ -403,8 +501,8 @@ try {
       taskScrollbar: getComputedStyle(document.querySelector('.task-scroll'), '::-webkit-scrollbar').width
     };
   })()`);
-  assert(compactMain.size[0] === 520 && compactMain.size[1] === 480, 'Main compact size failed');
-  assert(compactMain.shell.join(',') === '0,0,520,480', 'Main compact shell has an outer inset');
+  assert(compactMain.size[0] === 420 && compactMain.size[1] === 380, 'Main compact size failed');
+  assert(compactMain.shell.join(',') === '0,0,420,380', 'Main compact shell has an outer inset');
   assert(compactMain.scroll[0] === compactMain.scroll[1], 'Main compact layout overflows horizontally');
   assert(compactMain.mobileMenu === 'grid', 'Main compact responsive navigation did not activate');
   assert(compactMain.taskScrollbar === '5px', 'Main task scrollbar is not the slim style');
@@ -441,6 +539,7 @@ try {
     mainInitial,
     darkSelect,
     dataDirectoryInfo,
+    settingsNavigation,
     reminderTest,
     scheduledReminder,
     appearancePerformance: { appearanceFrames, liveAppearance, savedAppearance },
@@ -463,5 +562,13 @@ try {
   await delay(300);
   if (!child.killed) child.kill();
   await delay(180);
-  await fs.rm(isolatedUserData, { recursive: true, force: true });
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      await fs.rm(isolatedUserData, { recursive: true, force: true });
+      break;
+    } catch (error) {
+      if (error.code !== 'EBUSY' || attempt === 9) throw error;
+      await delay(300);
+    }
+  }
 }

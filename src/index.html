@@ -133,6 +133,7 @@
   <div class="menu-popover" id="noteMenu" hidden>
     <button data-note-action="rename"><span data-icon="edit"></span>重命名便签</button>
     <button data-note-action="color"><span data-icon="palette"></span>更换便签颜色</button>
+    <button data-note-action="smart-sort"><span data-icon="sparkles"></span>智能整理当前便签</button>
     <button data-note-action="complete"><span data-icon="check-all"></span>全部标为完成</button>
     <button data-note-action="clear"><span data-icon="archive"></span>清理已完成事项</button>
     <hr>
@@ -185,7 +186,7 @@
   <dialog id="settingsDialog" class="modal settings-modal">
     <form method="dialog">
       <div class="modal-head settings-drag-handle" id="settingsDragHandle">
-        <div><span class="eyebrow">拖动这里移动面板</span><h2>偏好设置</h2></div>
+        <div><span class="eyebrow">轻笺 1.8.1 · 实时预览</span><h2>偏好设置</h2></div>
         <div class="settings-head-actions">
           <button type="button" class="icon-btn" id="settingsMinimizeBtn" aria-label="最小化设置到任务栏" title="最小化到 Windows 任务栏" data-icon="minus"></button>
           <button type="button" class="icon-btn" id="settingsMaximizeBtn" aria-label="最大化或还原设置" title="最大化或还原" data-icon="square"></button>
@@ -193,35 +194,48 @@
         </div>
       </div>
       <div class="widget-live-preview" id="widgetLivePreview" hidden aria-label="胶囊实时预览">
-        <div class="widget-preview-background" id="widgetPreviewBackground"></div>
+        <div class="widget-preview-background" id="widgetPreviewBackground" aria-hidden="true"></div>
         <div class="widget-preview-progress"><span>68%</span></div>
         <div class="widget-preview-check">✓</div>
         <div class="widget-preview-copy"><small>轻笺预览</small><strong>整理今天的待办事项</strong></div>
         <div class="widget-preview-position">1 / 3</div>
         <div class="widget-preview-expand">⌃</div>
       </div>
-      <div class="settings-scroll">
-        <section class="setting-section">
+      <div class="settings-layout">
+        <nav class="settings-nav" id="settingsNav" aria-label="设置分类">
+          <button type="button" class="active" data-settings-section="appearance"><span data-icon="palette"></span><span>主页面</span></button>
+          <button type="button" data-settings-section="window"><span data-icon="panel"></span><span>窗口</span></button>
+          <button type="button" data-settings-section="widget"><span data-icon="widget"></span><span>小胶囊</span></button>
+          <button type="button" data-settings-section="data"><span data-icon="folder"></span><span>数据</span></button>
+        </nav>
+        <div class="settings-scroll" id="settingsScroll">
+        <section class="setting-section" data-settings-panel="appearance">
           <h3>主页面外观</h3>
           <div class="setting-card">
             <div class="setting-row color-setting"><div><strong>主页面背景颜色</strong><small>只应用于完整便签窗口</small></div><input type="color" id="backgroundColor" aria-label="主页面背景颜色"></div>
             <div class="background-presets" id="backgroundPresets"></div>
             <div class="setting-row color-setting"><div><strong>主页面文字颜色</strong><small>深色图片可改用浅色文字，也可恢复自动</small></div><div class="text-color-control"><button type="button" id="resetMainTextColor">自动</button><input type="color" id="mainTextColor" aria-label="主页面文字颜色"></div></div>
-            <div class="setting-row image-setting"><div><strong>主页面背景图片</strong><small id="mainBackgroundImageName">未设置图片</small></div><div class="inline-actions"><button type="button" id="chooseMainBackground"><span data-icon="image"></span>选择</button><button type="button" id="clearMainBackground">清除</button></div></div>
+            <div class="setting-row image-setting"><div><strong>主页面背景图片</strong><small id="mainBackgroundImageName">未设置图片</small></div><div class="inline-actions"><button type="button" id="chooseMainBackground"><span data-icon="image"></span>选择</button><button type="button" id="restoreMainBackground">恢复显示</button><button type="button" id="clearMainBackground">清除</button></div></div>
             <div class="setting-row"><div><strong>图片显示方式</strong><small>铺满、完整显示或平铺</small></div><select id="backgroundFit"><option value="cover">铺满窗口</option><option value="contain">完整显示</option><option value="repeat">平铺图片</option></select></div>
             <div class="range-setting"><div class="setting-row slider-row"><div><strong>图片透明度</strong><small>单独调整背景图片浓淡</small></div><output id="backgroundImageOpacityValue">55%</output></div><input class="range" id="backgroundImageOpacity" type="range" min="0" max="100" step="1"></div>
             <div class="range-setting"><div class="setting-row slider-row"><div><strong>底色透明度</strong><small>只改变主页面背景颜色</small></div><output id="backgroundOpacityValue">96%</output></div><input class="range" id="backgroundOpacity" type="range" min="35" max="100" step="1"></div>
             <div class="range-setting"><div class="setting-row slider-row"><div><strong>主窗口整体透明度</strong><small>同时改变主页面文字与控件</small></div><output id="windowOpacityValue">100%</output></div><input class="range" id="windowOpacity" type="range" min="55" max="100" step="1"></div>
             <div class="setting-row"><div><strong>界面模式</strong><small>跟随系统或固定明暗</small></div><select id="themeSelect"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></div>
+            <div class="appearance-presets" id="mainAppearancePresets" aria-label="主页面外观方案">
+              <button type="button" data-appearance-preset="clear"><strong>清晰</strong><small>高可读、低图片干扰</small></button>
+              <button type="button" data-appearance-preset="glass"><strong>玻璃</strong><small>平衡透明与层次</small></button>
+              <button type="button" data-appearance-preset="immersive"><strong>沉浸</strong><small>突出背景图片</small></button>
+            </div>
           </div>
         </section>
-        <section class="setting-section">
+        <section class="setting-section" data-settings-panel="window" hidden>
           <h3>窗口与系统</h3>
           <div class="setting-card window-size-card">
-            <div class="range-setting"><div class="setting-row slider-row"><div><strong>主页宽度</strong><small>也可直接拖动主页左右边缘或四角</small></div><output id="mainWindowWidthValue">920 px</output></div><input class="range" id="mainWindowWidth" type="range" min="520" max="1600" step="20"></div>
-            <div class="range-setting"><div class="setting-row slider-row"><div><strong>主页高度</strong><small>设置窗口可通过自身边缘自由缩放</small></div><output id="mainWindowHeightValue">680 px</output></div><input class="range" id="mainWindowHeight" type="range" min="480" max="1000" step="20"></div>
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>主页宽度</strong><small>也可直接拖动主页左右边缘或四角</small></div><output id="mainWindowWidthValue">920 px</output></div><input class="range" id="mainWindowWidth" type="range" min="380" max="1600" step="20"></div>
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>主页高度</strong><small>设置窗口可通过自身边缘自由缩放</small></div><output id="mainWindowHeightValue">680 px</output></div><input class="range" id="mainWindowHeight" type="range" min="360" max="1000" step="20"></div>
             <div class="window-size-presets" id="mainWindowSizePresets">
-              <button type="button" data-width="720" data-height="540">紧凑</button>
+              <button type="button" data-width="420" data-height="380">迷你</button>
+              <button type="button" data-width="640" data-height="480">紧凑</button>
               <button type="button" data-width="920" data-height="680">标准</button>
               <button type="button" data-width="1200" data-height="780">宽屏</button>
             </div>
@@ -236,13 +250,13 @@
             <label class="setting-row"><div><strong>列表显示已完成</strong><small>可随时从筛选器单独查看</small></div><span class="switch"><input type="checkbox" id="showCompleted"><span></span></span></label>
           </div>
         </section>
-        <section class="setting-section">
+        <section class="setting-section" data-settings-panel="widget" hidden>
           <h3>小胶囊外观与行为</h3>
           <div class="setting-card switches">
             <div class="setting-row color-setting"><div><strong>胶囊背景颜色</strong><small>与主页面背景完全独立</small></div><input type="color" id="widgetBackgroundColor" aria-label="胶囊背景颜色"></div>
             <div class="background-presets" id="widgetBackgroundPresets"></div>
             <div class="setting-row color-setting"><div><strong>胶囊文字颜色</strong><small>单独控制胶囊与展开面板的文字</small></div><div class="text-color-control"><button type="button" id="resetWidgetTextColor">自动</button><input type="color" id="widgetTextColor" aria-label="胶囊文字颜色"></div></div>
-            <div class="setting-row image-setting"><div><strong>胶囊背景图片</strong><small id="widgetBackgroundImageName">未设置图片</small></div><div class="inline-actions"><button type="button" id="chooseWidgetBackground"><span data-icon="image"></span>选择</button><button type="button" id="clearWidgetBackground">清除</button></div></div>
+            <div class="setting-row image-setting"><div><strong>胶囊背景图片</strong><small id="widgetBackgroundImageName">未设置图片</small></div><div class="inline-actions"><button type="button" id="chooseWidgetBackground"><span data-icon="image"></span>选择</button><button type="button" id="restoreWidgetBackground">恢复显示</button><button type="button" id="clearWidgetBackground">清除</button></div></div>
             <div class="setting-row"><div><strong>图片显示方式</strong><small>同时应用于胶囊和展开面板</small></div><select id="widgetBackgroundFit"><option value="cover">铺满窗口</option><option value="contain">完整显示</option><option value="repeat">平铺图片</option></select></div>
             <div class="range-setting"><div class="setting-row slider-row"><div><strong>胶囊图片透明度</strong><small>单独调整背景图片浓淡</small></div><output id="widgetBackgroundImageOpacityValue">55%</output></div><input class="range" id="widgetBackgroundImageOpacity" type="range" min="0" max="100" step="1"></div>
             <div class="range-setting"><div class="setting-row slider-row"><div><strong>胶囊底色透明度</strong><small>不影响主页面背景</small></div><output id="widgetBackgroundOpacityValue">96%</output></div><input class="range" id="widgetBackgroundOpacity" type="range" min="20" max="100" step="1"></div>
@@ -253,7 +267,7 @@
             <div class="range-setting"><div class="setting-row slider-row"><div><strong>小部件宽度</strong><small>可在 280–420 像素之间调整</small></div><output id="widgetWidthValue">330 px</output></div><input class="range" id="widgetWidth" type="range" min="280" max="420" step="10"></div>
           </div>
         </section>
-        <section class="setting-section">
+        <section class="setting-section" data-settings-panel="data" hidden>
           <h3>数据</h3>
           <div class="setting-card data-card">
             <div class="data-location"><div><strong>默认数据保存位置</strong><small id="dataDirectoryPath">正在读取…</small><small>便签、设置和背景图都会保存在这里，下次启动仍从此位置读取。目录丢失时会提示导入备份；取消导入则在原位置重新建立。</small></div></div>
@@ -264,7 +278,8 @@
             </div>
           </div>
         </section>
-        <p class="version">轻笺 1.7.4 · 单一融合版 · 数据仅保存在本机</p>
+        <p class="version">轻笺 1.8.1 · 数据仅保存在本机</p>
+        </div>
       </div>
     </form>
   </dialog>

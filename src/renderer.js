@@ -39,7 +39,8 @@ const ICONS = {
   'chevron-down': '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
   'maximize-2': '<svg viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>',
   'eye-off': '<svg viewBox="0 0 24 24"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.5 5.3A10.8 10.8 0 0 1 12 5c5.5 0 9 7 9 7a15 15 0 0 1-2.1 3.1M6.6 6.6C4.3 8.1 3 12 3 12s3.5 7 9 7c1.1 0 2.1-.3 3-.7"/></svg>',
-  image: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 4 4 2-2 5 4"/></svg>'
+  image: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 4 4 2-2 5 4"/></svg>',
+  sparkles: '<svg viewBox="0 0 24 24"><path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4zM18.5 14l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8zM6 14l.7 1.8 1.8.7-1.8.7L6 19l-.7-1.8-1.8-.7 1.8-.7z"/></svg>'
 };
 
 let state;
@@ -65,6 +66,7 @@ let widgetPreviewFinishTimer = null;
 let settingsPanelPosition = null;
 let settingsPanelDrag = null;
 let backgroundImageData = { main: '', widget: '' };
+let backgroundImageStatus = { main: null, widget: null };
 let mainWindowBounds = { width: 920, height: 680 };
 let dataDirectoryPath = '';
 let resizeGesture = null;
@@ -73,7 +75,9 @@ let appearanceFrame = null;
 let appearanceAdjustingTimer = null;
 let pendingAppearancePatch = {};
 let pendingWidgetPreview = false;
-let backgroundLoadSequence = 0;
+let backgroundLoadSequence = { main: 0, widget: 0 };
+let activeSettingsSection = 'appearance';
+let mainResizeFrame = null;
 const dirtySettingKeys = new Set();
 const activeSettingControls = new Set();
 
@@ -170,7 +174,31 @@ function renderWidgetPreview() {
   preview.style.setProperty('--preview-muted', `color-mix(in srgb, ${previewText} 66%, transparent)`);
   preview.style.setProperty('--preview-window-opacity', String(settings.widgetOpacity));
   preview.style.width = `${settings.widgetWidth}px`;
-  applyBackgroundLayer($('#widgetPreviewBackground'), backgroundImageData.widget, settings.widgetBackgroundFit, settings.widgetBackgroundImageOpacity);
+  const previewBackground = $('#widgetPreviewBackground');
+  applyBackgroundLayer(previewBackground, backgroundImageData.widget, settings.widgetBackgroundFit, settings.widgetBackgroundImageOpacity);
+  const hasConfiguredImage = Boolean(settings.widgetBackgroundImagePath);
+  const hasLoadedImage = Boolean(backgroundImageData.widget);
+  preview.dataset.imageState = hasLoadedImage ? 'loaded' : (hasConfiguredImage ? 'loading' : 'empty');
+  if (previewBackground) previewBackground.setAttribute('aria-hidden', 'true');
+}
+
+async function ensureWidgetPreviewBackground({ show = false } = {}) {
+  if (!state?.settings?.widgetBackgroundImagePath) {
+    backgroundImageData.widget = '';
+    renderWidgetPreview();
+    if (show) showWidgetPreview(0);
+    return false;
+  }
+  if (backgroundImageData.widget) {
+    renderWidgetPreview();
+    if (show) showWidgetPreview(0);
+    return true;
+  }
+  const image = await loadBackgroundImageTarget('widget', false);
+  renderWidgetPreview();
+  syncSettingControls();
+  if (show) showWidgetPreview(0);
+  return Boolean(image?.dataUrl);
 }
 
 function hideWidgetPreview(delay = 420) {
@@ -192,6 +220,9 @@ function showWidgetPreview(duration = 720) {
   renderWidgetPreview();
   preview.hidden = false;
   requestAnimationFrame(() => preview.classList.add('visible'));
+  if (state?.settings?.widgetBackgroundImagePath && !backgroundImageData.widget) {
+    ensureWidgetPreviewBackground().catch(error => console.error('读取胶囊预览背景失败:', error));
+  }
   if (duration > 0) hideWidgetPreview(duration);
 }
 
@@ -228,6 +259,8 @@ function syncMainWindowSize(bounds = mainWindowBounds) {
   const heightControl = $('#mainWindowHeight');
   if (widthControl) widthControl.value = String(Math.max(Number(widthControl.min), Math.min(Number(widthControl.max), width)));
   if (heightControl) heightControl.value = String(Math.max(Number(heightControl.min), Math.min(Number(heightControl.max), height)));
+  syncRangeVisual(widthControl);
+  syncRangeVisual(heightControl);
   if ($('#mainWindowWidthValue')) $('#mainWindowWidthValue').value = `${width} px`;
   if ($('#mainWindowHeightValue')) $('#mainWindowHeightValue').value = `${height} px`;
   $$('#mainWindowSizePresets button').forEach(button => {
@@ -235,13 +268,22 @@ function syncMainWindowSize(bounds = mainWindowBounds) {
   });
 }
 
-async function resizeMainFromControls() {
+function resizeMainFromControls() {
   const width = Number($('#mainWindowWidth').value);
   const height = Number($('#mainWindowHeight').value);
   $('#mainWindowWidthValue').value = `${width} px`;
   $('#mainWindowHeightValue').value = `${height} px`;
-  const bounds = await api.setMainWindowSize({ width, height });
-  if (bounds) syncMainWindowSize(bounds);
+  syncRangeVisual($('#mainWindowWidth'));
+  syncRangeVisual($('#mainWindowHeight'));
+  if (mainResizeFrame !== null) return;
+  mainResizeFrame = requestAnimationFrame(async () => {
+    mainResizeFrame = null;
+    const bounds = await api.setMainWindowSize({
+      width: Number($('#mainWindowWidth').value),
+      height: Number($('#mainWindowHeight').value)
+    });
+    if (bounds) syncMainWindowSize(bounds);
+  });
 }
 
 function bindWindowResizeHandles() {
@@ -287,9 +329,43 @@ function openSettingsDialog() {
   }
   closeMobileSidebar();
   syncSettingControls();
+  showSettingsSection(activeSettingsSection);
   const dialog = $('#settingsDialog');
   if (!dialog.open) dialog.show();
   requestAnimationFrame(keepSettingsPanelInView);
+}
+
+function showSettingsSection(section) {
+  const available = $$('[data-settings-panel]').some(panel => panel.dataset.settingsPanel === section);
+  activeSettingsSection = available ? section : 'appearance';
+  $$('[data-settings-panel]').forEach(panel => {
+    panel.hidden = panel.dataset.settingsPanel !== activeSettingsSection;
+  });
+  $$('[data-settings-section]').forEach(button => {
+    const selected = button.dataset.settingsSection === activeSettingsSection;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-current', selected ? 'page' : 'false');
+  });
+  const scroller = $('#settingsScroll');
+  if (scroller) scroller.scrollTop = 0;
+  requestAnimationFrame(syncAllRangeVisuals);
+  if (settingsWindowMode && activeSettingsSection === 'widget' && state?.settings?.widgetBackgroundImagePath && !backgroundImageData.widget) {
+    ensureWidgetPreviewBackground().catch(error => console.error('读取胶囊背景失败:', error));
+  }
+}
+
+function syncRangeVisual(control) {
+  if (!control?.matches?.('input[type="range"]')) return;
+  const minimum = Number(control.min) || 0;
+  const maximum = Number(control.max) || 100;
+  const value = Number(control.value);
+  const progress = maximum === minimum ? 0 : Math.max(0, Math.min(100, (value - minimum) / (maximum - minimum) * 100));
+  control.style.setProperty('--range-progress', `${progress}%`);
+  control.setAttribute('aria-valuenow', String(value));
+}
+
+function syncAllRangeVisuals() {
+  $$('.range').forEach(syncRangeVisual);
 }
 
 function bindSettingsPanelDrag() {
@@ -332,7 +408,9 @@ function syncSettingControls() {
   const automaticText = dark ? '#F1F1F4' : '#292B32';
   const setValue = (id, value) => {
     const control = $(`#${id}`);
-    if (control && !activeSettingControls.has(id)) control.value = String(value);
+    if (!control) return;
+    if (!activeSettingControls.has(id)) control.value = String(value);
+    syncRangeVisual(control);
   };
   setValue('backgroundColor', s.background);
   setValue('widgetBackgroundColor', s.widgetBackground || s.background);
@@ -348,8 +426,19 @@ function syncSettingControls() {
   $('#windowOpacityValue').value = `${Math.round(s.windowOpacity * 100)}%`;
   setValue('backgroundFit', s.backgroundFit);
   setValue('widgetBackgroundFit', s.widgetBackgroundFit);
-  $('#mainBackgroundImageName').textContent = s.backgroundImageName || '未设置图片';
-  $('#widgetBackgroundImageName').textContent = s.widgetBackgroundImageName || '未设置图片';
+  const backgroundLabel = (target, name, path, opacity) => {
+    const status = backgroundImageStatus[target];
+    if (!path) return '未设置图片';
+    if (status && status.exists === false) return `⚠ ${name || '背景图片'}不存在，请重新选择`;
+    if (Number(opacity) <= 0.01) return `${name || '背景图片'} · 当前隐藏`;
+    return name || '已设置背景图片';
+  };
+  $('#mainBackgroundImageName').textContent = backgroundLabel('main', s.backgroundImageName, s.backgroundImagePath, s.backgroundImageOpacity);
+  $('#widgetBackgroundImageName').textContent = backgroundLabel('widget', s.widgetBackgroundImageName, s.widgetBackgroundImagePath, s.widgetBackgroundImageOpacity);
+  $('#restoreMainBackground').disabled = !s.backgroundImagePath;
+  $('#clearMainBackground').disabled = !s.backgroundImagePath;
+  $('#restoreWidgetBackground').disabled = !s.widgetBackgroundImagePath;
+  $('#clearWidgetBackground').disabled = !s.widgetBackgroundImagePath;
   setValue('themeSelect', s.theme);
   setValue('closeBehavior', s.closeBehavior || 'widget');
   setValue('widgetWidth', s.widgetWidth);
@@ -775,13 +864,29 @@ async function chooseBackground(target) {
   const isWidget = target === 'widget';
   const pathKey = isWidget ? 'widgetBackgroundImagePath' : 'backgroundImagePath';
   const nameKey = isWidget ? 'widgetBackgroundImageName' : 'backgroundImageName';
+  const opacityKey = isWidget ? 'widgetBackgroundImageOpacity' : 'backgroundImageOpacity';
   state.settings[pathKey] = result.path;
   state.settings[nameKey] = result.name;
+  if (Number.isFinite(Number(result.opacity))) state.settings[opacityKey] = Number(result.opacity);
   backgroundImageData[target] = result.dataUrl;
+  backgroundImageStatus[target] = { exists: true, path: result.path, name: result.name };
   applySettings();
   save(false);
   toast(`${isWidget ? '胶囊' : '主页面'}背景图片已更新`);
-  if (isWidget) showWidgetPreview(1200);
+  if (isWidget) {
+    renderWidgetPreview();
+    showWidgetPreview(1600);
+  }
+}
+
+function restoreBackground(target) {
+  const isWidget = target === 'widget';
+  const pathKey = isWidget ? 'widgetBackgroundImagePath' : 'backgroundImagePath';
+  const opacityKey = isWidget ? 'widgetBackgroundImageOpacity' : 'backgroundImageOpacity';
+  if (!state.settings[pathKey]) return toast('请先选择一张背景图片');
+  queueAppearancePreview({ [opacityKey]: 0.62 }, { widgetPreview: isWidget });
+  syncSettingControls();
+  toast(`${isWidget ? '胶囊' : '主页面'}背景已恢复显示`);
 }
 
 async function clearBackground(target) {
@@ -790,21 +895,32 @@ async function clearBackground(target) {
   state.settings[isWidget ? 'widgetBackgroundImagePath' : 'backgroundImagePath'] = '';
   state.settings[isWidget ? 'widgetBackgroundImageName' : 'backgroundImageName'] = '';
   backgroundImageData[target] = '';
+  backgroundImageStatus[target] = null;
   applySettings();
   save(false);
   if (isWidget) showWidgetPreview(900);
 }
 
+async function loadBackgroundImageTarget(target, metadataOnly = false) {
+  const sequence = ++backgroundLoadSequence[target];
+  const image = await api.loadBackgroundImage(target, metadataOnly);
+  if (sequence !== backgroundLoadSequence[target]) return null;
+  backgroundImageStatus[target] = image;
+  if (!metadataOnly) {
+    backgroundImageData[target] = image?.dataUrl || '';
+  } else if (!image?.exists || !image?.path) {
+    backgroundImageData[target] = '';
+  }
+  return image;
+}
+
 async function loadBackgroundImages() {
-  const sequence = ++backgroundLoadSequence;
+  const metadataOnly = settingsWindowMode;
   const [mainImage, widgetImage] = await Promise.all([
-    api.loadBackgroundImage('main'),
-    api.loadBackgroundImage('widget')
+    loadBackgroundImageTarget('main', metadataOnly),
+    loadBackgroundImageTarget('widget', metadataOnly)
   ]);
-  if (sequence !== backgroundLoadSequence) return false;
-  backgroundImageData.main = mainImage?.dataUrl || '';
-  backgroundImageData.widget = widgetImage?.dataUrl || '';
-  return true;
+  return Boolean(mainImage || widgetImage);
 }
 
 function bindSettingsControlGuards() {
@@ -1131,6 +1247,23 @@ function bindEvents() {
     const action = button.dataset.noteAction; $('#noteMenu').hidden = true;
     if (action === 'rename') openNoteDialog('rename');
     if (action === 'color') showPalette($('#noteMenuBtn'), currentNote().color, color => { currentNote().color = color; save(); });
+    if (action === 'smart-sort') {
+      const priorityOrder = { high: 0, normal: 1, low: 2 };
+      currentNote().tasks = currentNote().tasks
+        .map((task, index) => ({ task, index }))
+        .sort((left, right) => {
+          const done = Number(left.task.done) - Number(right.task.done);
+          if (done) return done;
+          const reminderLeft = left.task.reminder?.enabled && left.task.reminder?.at ? Date.parse(left.task.reminder.at) : Number.POSITIVE_INFINITY;
+          const reminderRight = right.task.reminder?.enabled && right.task.reminder?.at ? Date.parse(right.task.reminder.at) : Number.POSITIVE_INFINITY;
+          if (reminderLeft !== reminderRight) return reminderLeft - reminderRight;
+          const priority = (priorityOrder[left.task.priority] ?? 1) - (priorityOrder[right.task.priority] ?? 1);
+          return priority || left.index - right.index;
+        })
+        .map(entry => entry.task);
+      save();
+      toast('已按完成状态、提醒时间和优先级整理');
+    }
     if (action === 'complete') { currentNote().tasks.forEach(task => { task.done = true; }); save(); toast('已全部标为完成'); }
     if (action === 'clear') {
       const removed = currentNote().tasks.filter(task => task.done);
@@ -1201,14 +1334,34 @@ function bindEvents() {
     control.addEventListener('change', () => hideWidgetPreview(420));
   });
   $('#widgetBackgroundFit').addEventListener('change', () => showWidgetPreview(900));
+  $('#settingsScroll').addEventListener('input', event => syncRangeVisual(event.target));
+  $('#settingsNav').addEventListener('click', event => {
+    const button = event.target.closest('[data-settings-section]');
+    if (button) showSettingsSection(button.dataset.settingsSection);
+  });
   $('#chooseMainBackground').addEventListener('click', () => chooseBackground('main'));
+  $('#restoreMainBackground').addEventListener('click', () => restoreBackground('main'));
   $('#clearMainBackground').addEventListener('click', () => clearBackground('main'));
   $('#chooseWidgetBackground').addEventListener('click', () => chooseBackground('widget'));
+  $('#restoreWidgetBackground').addEventListener('click', () => restoreBackground('widget'));
   $('#clearWidgetBackground').addEventListener('click', () => clearBackground('widget'));
+  $('#mainAppearancePresets').addEventListener('click', event => {
+    const button = event.target.closest('[data-appearance-preset]');
+    const patches = {
+      clear: { backgroundOpacity: 0.9, backgroundImageOpacity: 0.24, windowOpacity: 1 },
+      glass: { backgroundOpacity: 0.72, backgroundImageOpacity: 0.58, windowOpacity: 1 },
+      immersive: { backgroundOpacity: 0.45, backgroundImageOpacity: 0.86, windowOpacity: 1 }
+    };
+    if (!button || !patches[button.dataset.appearancePreset]) return;
+    queueAppearancePreview(patches[button.dataset.appearancePreset]);
+    syncSettingControls();
+    toast(`已应用“${button.querySelector('strong').textContent}”外观`);
+  });
   $('#settingsDialog').addEventListener('close', hideWidgetPreviewImmediately);
-  $('#settingsMinimizeBtn').addEventListener('click', () => {
+  $('#settingsMinimizeBtn').addEventListener('click', async () => {
     hideWidgetPreviewImmediately();
-    api.settingsWindowAction('minimize');
+    const minimized = await api.settingsWindowAction('minimize');
+    if (!minimized) toast('设置窗口暂时无法最小化');
   });
   $('#settingsMaximizeBtn').addEventListener('click', () => api.settingsWindowAction('maximize'));
   $('#mainWindowWidth').addEventListener('input', resizeMainFromControls);
@@ -1313,11 +1466,16 @@ async function init() {
   state = await api.loadState();
   dataDirectoryPath = await api.getDataDirectory();
   mainWindowBounds = await api.getMainWindowBounds() || mainWindowBounds;
-  await loadBackgroundImages();
   quickColor = currentNote().color || TASK_COLORS[0];
   bindEvents();
   renderAll();
   if (settingsWindowMode) openSettingsDialog();
+  loadBackgroundImages().then(loaded => {
+    if (!loaded) return;
+    applyAppearanceOnly();
+    renderWidgetPreview();
+    syncSettingControls();
+  }).catch(error => console.error('读取背景图片失败:', error));
   api.onQuickAdd(async () => {
     if (widgetUiState.enabled) await api.widgetAction('exit');
     setTimeout(() => $('#quickAddInput').focus(), 120);
@@ -1370,9 +1528,12 @@ async function init() {
     }
     state = value;
     if (settingsWindowMode) Object.assign(state.settings, localSettings);
+    renderAll();
     const loaded = await loadBackgroundImages();
     if (!loaded) return;
-    renderAll();
+    applyAppearanceOnly();
+    renderWidgetPreview();
+    syncSettingControls();
   });
   api.onMainBounds(bounds => syncMainWindowSize(bounds));
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (state.settings.theme === 'system') applySettings(); });

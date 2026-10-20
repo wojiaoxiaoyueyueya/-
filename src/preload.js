@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld('lingjian', {
   edgeHover: () => ipcRenderer.invoke('window:edge-hover'),
   edgeLeave: () => ipcRenderer.invoke('window:edge-leave'),
   chooseBackgroundImage: target => ipcRenderer.invoke('appearance:choose-image', target),
-  loadBackgroundImage: target => ipcRenderer.invoke('appearance:load-image', target),
+  loadBackgroundImage: (target, metadataOnly = false) => ipcRenderer.invoke('appearance:load-image', target, metadataOnly),
   clearBackgroundImage: target => ipcRenderer.invoke('appearance:clear-image', target),
   exportData: () => ipcRenderer.invoke('data:export'),
   importData: () => ipcRenderer.invoke('data:import'),

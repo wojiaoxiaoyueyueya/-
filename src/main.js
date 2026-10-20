@@ -34,6 +34,7 @@ let resizeFinishTimer = null;
 let resolvedDataDirectory = null;
 let hasDataDirectoryPreference = false;
 let lastReminderPayload = null;
+const backgroundCache = new Map();
 
 // 独立测试实例不会读取或覆盖用户的正式便签数据。
 if (process.argv.includes('--test-mode')) {
@@ -122,7 +123,7 @@ const defaultState = () => {
   const now = Date.now();
   const noteId = `note-${now}`;
   return {
-    version: 5,
+    version: 6,
     activeNoteId: noteId,
     notes: [{
       id: noteId,
@@ -222,6 +223,16 @@ function normalizeState(input) {
     if (normalized.settings.backgroundOpacity >= 0.94) normalized.settings.backgroundOpacity = 0.78;
     if (normalized.settings.widgetBackgroundOpacity >= 0.94) normalized.settings.widgetBackgroundOpacity = 0.82;
   }
+  if (previousVersion < 6) {
+    // 1.7.4 的自绘滑块在部分 Windows 缩放环境下会把图片透明度误写为 0。
+    // 只在首次升级且确实保存了背景图片时恢复可见度，之后仍允许用户自由调到 0。
+    if (normalized.settings.backgroundImagePath && normalized.settings.backgroundImageOpacity <= 0.01) {
+      normalized.settings.backgroundImageOpacity = 0.62;
+    }
+    if (normalized.settings.widgetBackgroundImagePath && normalized.settings.widgetBackgroundImageOpacity <= 0.01) {
+      normalized.settings.widgetBackgroundImageOpacity = 0.62;
+    }
+  }
   return normalized;
 }
 
@@ -297,8 +308,8 @@ function iconPath() {
 }
 
 const backgroundTargets = {
-  main: { pathKey: 'backgroundImagePath', nameKey: 'backgroundImageName', filePrefix: 'main-background' },
-  widget: { pathKey: 'widgetBackgroundImagePath', nameKey: 'widgetBackgroundImageName', filePrefix: 'widget-background' }
+  main: { pathKey: 'backgroundImagePath', nameKey: 'backgroundImageName', opacityKey: 'backgroundImageOpacity', filePrefix: 'main-background', defaultOpacity: 0.62 },
+  widget: { pathKey: 'widgetBackgroundImagePath', nameKey: 'widgetBackgroundImageName', opacityKey: 'widgetBackgroundImageOpacity', filePrefix: 'widget-background', defaultOpacity: 0.62 }
 };
 
 function imageMime(extension) {
@@ -308,26 +319,39 @@ function imageMime(extension) {
   })[String(extension).replace('.', '').toLowerCase()] || '';
 }
 
-async function backgroundDataUrl(target) {
+async function backgroundDataUrl(target, metadataOnly = false) {
   const config = backgroundTargets[target];
   if (!config) return { dataUrl: '', name: '' };
   const filePath = appState.settings[config.pathKey];
-  if (!filePath || !fs.existsSync(filePath)) return { dataUrl: '', name: appState.settings[config.nameKey] || '' };
+  const name = appState.settings[config.nameKey] || (filePath ? path.basename(filePath) : '');
+  if (!filePath) return { dataUrl: '', name: '', path: '', exists: false };
   const mime = imageMime(path.extname(filePath));
-  if (!mime) return { dataUrl: '', name: '' };
-  const buffer = await fsp.readFile(filePath);
-  return { dataUrl: `data:${mime};base64,${buffer.toString('base64')}`, name: appState.settings[config.nameKey] || path.basename(filePath) };
+  if (!mime) return { dataUrl: '', name, path: filePath, exists: false, error: 'unsupported' };
+  try {
+    const stat = await fsp.stat(filePath);
+    if (metadataOnly) return { dataUrl: '', name, path: filePath, exists: true, size: stat.size };
+    const signature = `${filePath}|${stat.size}|${stat.mtimeMs}`;
+    const cached = backgroundCache.get(target);
+    if (cached?.signature === signature) return cached.value;
+    const buffer = await fsp.readFile(filePath);
+    const value = { dataUrl: `data:${mime};base64,${buffer.toString('base64')}`, name, path: filePath, exists: true };
+    backgroundCache.set(target, { signature, value });
+    return value;
+  } catch {
+    backgroundCache.delete(target);
+    return { dataUrl: '', name, path: filePath, exists: false, error: 'missing' };
+  }
 }
 
 function createWindow() {
   const saved = appState.windowBounds || {};
   mainWindow = new BrowserWindow({
-    width: clamp(Number(saved.width), 360, 1800),
-    height: clamp(Number(saved.height), 480, 1400),
+    width: clamp(Number(saved.width), 380, 1800),
+    height: clamp(Number(saved.height), 360, 1400),
     x: Number.isFinite(saved.x) ? saved.x : undefined,
     y: Number.isFinite(saved.y) ? saved.y : undefined,
-    minWidth: 420,
-    minHeight: 420,
+    minWidth: 380,
+    minHeight: 360,
     show: false,
     frame: false,
     transparent: true,
@@ -431,8 +455,8 @@ function createSettingsWindow() {
   }
   const mainBounds = mainWindow?.getBounds() || appState.windowBounds || { x: 100, y: 80, width: 920, height: 680 };
   const area = screen.getDisplayMatching(mainBounds).workArea;
-  const width = Math.min(580, area.width - 30);
-  const height = Math.min(760, area.height - 30);
+  const width = Math.min(720, area.width - 30);
+  const height = Math.min(800, area.height - 30);
   let x = mainBounds.x + mainBounds.width + 12;
   if (x + width > area.x + area.width - 10) x = Math.max(area.x + 10, mainBounds.x + mainBounds.width - width - 18);
   const y = clamp(mainBounds.y, area.y + 10, area.y + area.height - height - 10);
@@ -441,8 +465,8 @@ function createSettingsWindow() {
     height,
     x,
     y,
-    minWidth: 320,
-    minHeight: 360,
+    minWidth: 460,
+    minHeight: 420,
     show: false,
     frame: false,
     transparent: true,
@@ -552,8 +576,8 @@ function setMainWindowSize(size) {
   if (mainWindow.isMaximized()) mainWindow.unmaximize();
   const current = mainWindow.getBounds();
   const area = currentWorkArea(current);
-  const width = clamp(Number(size?.width), 420, area.width);
-  const height = clamp(Number(size?.height), 420, area.height);
+  const width = clamp(Number(size?.width), 380, area.width);
+  const height = clamp(Number(size?.height), 360, area.height);
   const target = {
     width,
     height,
@@ -755,7 +779,7 @@ function enterWidgetMode() {
   if (!widgetMode) {
     if (mainWindow.isMaximized()) mainWindow.unmaximize();
     const bounds = mainWindow.getBounds();
-    if (bounds.width >= 360 && bounds.height >= 480) {
+    if (bounds.width >= 380 && bounds.height >= 360) {
       fullWindowBounds = bounds;
       appState.windowBounds = bounds;
     }
@@ -787,7 +811,7 @@ function exitWidgetMode(focus = true) {
   widgetMode = false;
   widgetExpanded = false;
   appState.settings.lastMode = 'full';
-  mainWindow.setMinimumSize(420, 420);
+  mainWindow.setMinimumSize(380, 360);
   mainWindow.setResizable(true);
   mainWindow.setMaximizable(true);
   mainWindow.setSkipTaskbar(false);
@@ -795,8 +819,8 @@ function exitWidgetMode(focus = true) {
   mainWindow.setOpacity(clamp(Number(appState.settings.windowOpacity), 0.55, 1));
   const saved = fullWindowBounds || appState.windowBounds || { width: 920, height: 680 };
   const area = currentWorkArea(saved);
-  const width = clamp(Number(saved.width), 360, area.width);
-  const height = clamp(Number(saved.height), 480, area.height);
+  const width = clamp(Number(saved.width), 380, area.width);
+  const height = clamp(Number(saved.height), 360, area.height);
   const target = {
     width, height,
     x: clamp(Number(saved.x), area.x, area.x + area.width - width),
@@ -1091,6 +1115,7 @@ async function activateDataDirectory(directory, state) {
   await saveDataDirectoryPreference(directory);
   resolvedDataDirectory = path.normalize(directory);
   appState = state;
+  backgroundCache.clear();
   applyLoadedStateToRuntime();
   broadcastDataDirectory();
   broadcastState();
@@ -1121,6 +1146,7 @@ async function commitBackupToDirectory(raw, directory) {
   await saveDataDirectoryPreference(directory);
   resolvedDataDirectory = path.normalize(directory);
   appState = imported;
+  backgroundCache.clear();
   return imported;
 }
 
@@ -1236,6 +1262,8 @@ async function initializeAppState() {
   if (!preferenceAlreadyExisted) migrateLegacyDataIfNeeded();
   try {
     appState = loadStateFromDisk();
+    // 将版本迁移和修复后的设置立即落盘，避免用户未做其他操作时下次启动又读到旧值。
+    await writeStateSnapshot(directory, appState);
     await saveDataDirectoryPreference(directory);
     return appState;
   } catch (error) {
@@ -1373,8 +1401,8 @@ function registerIpc() {
       if (settingsWindow.isMaximized()) settingsWindow.unmaximize();
       const current = settingsWindow.getBounds();
       const area = currentWorkArea(current);
-      const width = clamp(Number(value?.width), 320, area.width);
-      const height = clamp(Number(value?.height), 360, area.height);
+      const width = clamp(Number(value?.width), 460, area.width);
+      const height = clamp(Number(value?.height), 420, area.height);
       settingsWindow.setBounds({
         x: clamp(current.x, area.x, area.x + area.width - width),
         y: clamp(current.y, area.y, area.y + area.height - height),
@@ -1446,32 +1474,38 @@ function registerIpc() {
     if (result.canceled || !result.filePaths[0]) return { canceled: true };
     const filePath = result.filePaths[0];
     const stat = await fsp.stat(filePath);
-    if (stat.size > 12 * 1024 * 1024) return { canceled: false, error: '图片不能超过 12 MB' };
+    if (stat.size > 24 * 1024 * 1024) return { canceled: false, error: '图片不能超过 24 MB' };
     const extension = path.extname(filePath).slice(1).toLowerCase();
     const mime = imageMime(extension);
     if (!mime) return { canceled: false, error: '不支持这种图片格式' };
     const backgroundsDir = path.join(dataDirectory(), 'backgrounds');
     await fsp.mkdir(backgroundsDir, { recursive: true });
     const savedPath = path.join(backgroundsDir, `${config.filePrefix}.${extension}`);
-    await fsp.copyFile(filePath, savedPath);
+    if (!pathsEqual(filePath, savedPath)) await fsp.copyFile(filePath, savedPath);
     appState.settings[config.pathKey] = savedPath;
     appState.settings[config.nameKey] = path.basename(filePath);
-    persistState(true);
+    if (Number(appState.settings[config.opacityKey]) <= 0.01) {
+      appState.settings[config.opacityKey] = config.defaultOpacity;
+    }
+    backgroundCache.delete(target);
+    await persistState(true);
     const buffer = await fsp.readFile(savedPath);
     return {
       canceled: false,
       name: path.basename(filePath),
       path: savedPath,
       size: stat.size,
+      opacity: appState.settings[config.opacityKey],
       dataUrl: `data:${mime};base64,${buffer.toString('base64')}`
     };
   });
-  ipcMain.handle('appearance:load-image', (_event, target) => backgroundDataUrl(target));
+  ipcMain.handle('appearance:load-image', (_event, target, metadataOnly) => backgroundDataUrl(target, Boolean(metadataOnly)));
   ipcMain.handle('appearance:clear-image', (_event, target) => {
     const config = backgroundTargets[target];
     if (!config) return false;
     appState.settings[config.pathKey] = '';
     appState.settings[config.nameKey] = '';
+    backgroundCache.delete(target);
     persistState();
     return true;
   });
@@ -1496,6 +1530,7 @@ function registerIpc() {
     const imported = normalizeState(rawImported);
     await restoreEmbeddedBackgrounds(rawImported, imported);
     appState = imported;
+    backgroundCache.clear();
     applyLoadedStateToRuntime();
     await persistState(true);
     broadcastState();
