@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'">
+  <title>轻笺 · 桌面任务板</title>
+  <link rel="stylesheet" href="desktop-board.css">
+</head>
+<body>
+  <main class="desktop-board" id="desktopBoard">
+    <div class="glass-light" aria-hidden="true"></div>
+    <header class="board-header drag-region">
+      <div class="board-brand">
+        <span class="brand-mark">✓</span>
+        <div>
+          <small>轻笺桌面任务板</small>
+          <select id="boardNoteSelect" class="no-drag" aria-label="选择便签"></select>
+        </div>
+      </div>
+      <div class="board-actions no-drag">
+        <button id="boardLockBtn" title="锁定位置" aria-label="锁定或解锁位置">◇</button>
+        <button id="boardOpenBtn" title="打开完整轻笺" aria-label="打开完整轻笺">↗</button>
+        <button id="boardHideBtn" title="隐藏桌面任务板" aria-label="隐藏桌面任务板">×</button>
+      </div>
+    </header>
+
+    <section class="board-overview">
+      <div><strong id="boardHeadline">今天要稳稳完成</strong><small id="boardSummary">正在同步任务…</small></div>
+      <div class="board-progress" id="boardProgress"><span id="boardProgressText">0%</span></div>
+    </section>
+
+    <section class="board-list" id="boardList" aria-live="polite"></section>
+    <section class="board-empty" id="boardEmpty" hidden>
+      <span>✓</span>
+      <strong>当前任务都完成了</strong>
+      <small>新的安排会自动同步到这里</small>
+    </section>
+
+    <footer class="board-footer">
+      <span id="boardModeHint">只显示当前便签 · 与轻笺实时同步</span>
+      <span class="desktop-badge">桌面层</span>
+    </footer>
+
+    <div class="resize-handles" aria-hidden="true">
+      <span data-resize-edge="n" class="resize-n"></span><span data-resize-edge="s" class="resize-s"></span>
+      <span data-resize-edge="e" class="resize-e"></span><span data-resize-edge="w" class="resize-w"></span>
+      <span data-resize-edge="ne" class="resize-ne"></span><span data-resize-edge="nw" class="resize-nw"></span>
+      <span data-resize-edge="se" class="resize-se"></span><span data-resize-edge="sw" class="resize-sw"></span>
+    </div>
+  </main>
+  <script src="desktop-board.js"></script>
+</body>
+</html>

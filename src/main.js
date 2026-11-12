@@ -1,6 +1,7 @@
 'use strict';
 
 const { app, BrowserWindow, ipcMain, Tray, Menu, Notification, nativeImage, screen, dialog, nativeTheme, shell } = require('electron');
+const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs/promises');
@@ -11,6 +12,11 @@ const EDGE_VISIBLE = 38;
 let mainWindow = null;
 let settingsWindow = null;
 let settingsWindowExpandedBounds = null;
+let desktopBoardWindow = null;
+let desktopBoardAttachTimer = null;
+let desktopBoardBoundsTimer = null;
+let desktopBoardInternalMove = false;
+let desktopBoardAttached = false;
 let tray = null;
 let isQuitting = false;
 let appState = null;
@@ -123,7 +129,7 @@ const defaultState = () => {
   const now = Date.now();
   const noteId = `note-${now}`;
   return {
-    version: 6,
+    version: 7,
     activeNoteId: noteId,
     notes: [{
       id: noteId,
@@ -171,12 +177,17 @@ const defaultState = () => {
       widgetWidth: 330,
       rememberWidgetMode: true,
       lastMode: 'full',
+      desktopBoardEnabled: false,
+      desktopBoardLocked: false,
+      desktopBoardScope: 'active',
+      desktopBoardStyle: 'glass',
       showCompleted: true,
       playSound: true,
       compactMode: false
     },
     windowBounds: { width: 920, height: 680 },
-    widgetBounds: {}
+    widgetBounds: {},
+    desktopBoardBounds: { width: 330, height: 420 }
   };
 };
 
@@ -196,7 +207,8 @@ function normalizeState(input) {
     notes,
     settings: { ...defaults.settings, ...(state.settings || {}) },
     windowBounds: { ...defaults.windowBounds, ...(state.windowBounds || {}) },
-    widgetBounds: { ...(state.widgetBounds || {}) }
+    widgetBounds: { ...(state.widgetBounds || {}) },
+    desktopBoardBounds: { ...defaults.desktopBoardBounds, ...(state.desktopBoardBounds || {}) }
   };
   if (!notes.some(note => note.id === normalized.activeNoteId)) normalized.activeNoteId = notes[0].id;
   normalized.settings.backgroundOpacity = clamp(Number(normalized.settings.backgroundOpacity), 0.35, 1);
@@ -206,6 +218,10 @@ function normalizeState(input) {
   normalized.settings.widgetBackgroundImageOpacity = clamp(Number(normalized.settings.widgetBackgroundImageOpacity), 0, 1);
   normalized.settings.widgetOpacity = clamp(Number(normalized.settings.widgetOpacity), 0.65, 1);
   normalized.settings.widgetWidth = clamp(Number(normalized.settings.widgetWidth), 280, 420);
+  if (!['active', 'all'].includes(normalized.settings.desktopBoardScope)) normalized.settings.desktopBoardScope = 'active';
+  if (!['clear', 'glass', 'airy'].includes(normalized.settings.desktopBoardStyle)) normalized.settings.desktopBoardStyle = 'glass';
+  normalized.desktopBoardBounds.width = clamp(Number(normalized.desktopBoardBounds.width), 280, 560);
+  normalized.desktopBoardBounds.height = clamp(Number(normalized.desktopBoardBounds.height), 220, 760);
   if (!['widget', 'tray', 'quit'].includes(normalized.settings.closeBehavior)) normalized.settings.closeBehavior = 'widget';
   if (!['full', 'widget'].includes(normalized.settings.lastMode)) normalized.settings.lastMode = 'full';
   if (!['cover', 'contain', 'repeat'].includes(normalized.settings.backgroundFit)) normalized.settings.backgroundFit = 'cover';
@@ -505,11 +521,185 @@ function createSettingsWindow() {
   return settingsWindow;
 }
 
+function desktopBoardTargetBounds() {
+  const saved = appState.desktopBoardBounds || {};
+  const width = clamp(Number(saved.width), 280, 560);
+  const height = clamp(Number(saved.height), 220, 760);
+  const reference = Number.isFinite(saved.x) && Number.isFinite(saved.y)
+    ? { x: saved.x, y: saved.y, width, height }
+    : screen.getPrimaryDisplay().workArea;
+  const area = screen.getDisplayMatching(reference).workArea;
+  const margin = 18;
+  return {
+    width,
+    height,
+    x: Number.isFinite(saved.x) ? clamp(Number(saved.x), area.x + margin, area.x + area.width - width - margin) : area.x + area.width - width - 30,
+    y: Number.isFinite(saved.y) ? clamp(Number(saved.y), area.y + margin, area.y + area.height - height - margin) : area.y + 72
+  };
+}
+
+function desktopBoardState() {
+  return {
+    enabled: Boolean(appState?.settings.desktopBoardEnabled),
+    locked: Boolean(appState?.settings.desktopBoardLocked),
+    scope: appState?.settings.desktopBoardScope || 'active',
+    style: appState?.settings.desktopBoardStyle || 'glass',
+    attached: desktopBoardAttached
+  };
+}
+
+function sendDesktopBoardState() {
+  if (!desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
+  desktopBoardWindow.webContents.send('app:desktop-board-state', desktopBoardState());
+}
+
+function applyDesktopBoardLock() {
+  if (!desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
+  const locked = Boolean(appState.settings.desktopBoardLocked);
+  desktopBoardWindow.setMovable(!locked);
+  desktopBoardWindow.setResizable(!locked);
+  sendDesktopBoardState();
+}
+
+function attachDesktopBoardToDesktop() {
+  clearTimeout(desktopBoardAttachTimer);
+  if (process.platform !== 'win32' || (testMode() && !process.argv.includes('--test-desktop-host')) || !desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
+  desktopBoardAttachTimer = setTimeout(() => {
+    if (!desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
+    const handle = desktopBoardWindow.getNativeWindowHandle();
+    const handleValue = handle.length >= 8 ? handle.readBigUInt64LE(0) : BigInt(handle.readUInt32LE(0));
+    const source = `
+using System;
+using System.Runtime.InteropServices;
+public static class LingJianDesktopHost {
+  private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindow(string className, string windowName);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string className, string windowName);
+  [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+  [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+  [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+  [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+  public static bool Attach(IntPtr child) {
+    IntPtr host = FindWindow("Progman", null);
+    if (host == IntPtr.Zero) return false;
+    IntPtr result;
+    SendMessageTimeout(host, 0x052C, IntPtr.Zero, IntPtr.Zero, 0, 1000, out result);
+    EnumWindows(delegate(IntPtr top, IntPtr value) {
+      if (FindWindowEx(top, IntPtr.Zero, "SHELLDLL_DefView", null) == IntPtr.Zero) return true;
+      host = top;
+      return false;
+    }, IntPtr.Zero);
+    SetParent(child, host);
+    return SetWindowPos(child, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0040);
+  }
+}`;
+    const command = `Add-Type -TypeDefinition @'\n${source}\n'@; [LingJianDesktopHost]::Attach([IntPtr]::new([long]${handleValue}))`;
+    const encoded = Buffer.from(command, 'utf16le').toString('base64');
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], {
+      windowsHide: true,
+      timeout: 6000
+    }, (error, stdout) => {
+      desktopBoardAttached = !error && /true/i.test(String(stdout));
+      if (error) console.warn('桌面任务板未能嵌入桌面层，将使用普通桌面窗口回退:', error.message);
+      if (!desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
+      desktopBoardInternalMove = true;
+      desktopBoardWindow.setBounds(desktopBoardTargetBounds(), false);
+      desktopBoardInternalMove = false;
+      desktopBoardWindow.setAlwaysOnTop(false);
+      sendDesktopBoardState();
+    });
+  }, 90);
+}
+
+function rememberDesktopBoardBounds() {
+  if (!desktopBoardWindow || desktopBoardWindow.isDestroyed() || desktopBoardInternalMove || appState.settings.desktopBoardLocked) return;
+  clearTimeout(desktopBoardBoundsTimer);
+  desktopBoardBoundsTimer = setTimeout(() => {
+    if (!desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
+    appState.desktopBoardBounds = desktopBoardWindow.getBounds();
+    persistState();
+  }, 140);
+}
+
+function createDesktopBoardWindow() {
+  if (desktopBoardWindow && !desktopBoardWindow.isDestroyed()) return desktopBoardWindow;
+  const bounds = desktopBoardTargetBounds();
+  desktopBoardWindow = new BrowserWindow({
+    ...bounds,
+    minWidth: 280,
+    minHeight: 220,
+    maxWidth: 560,
+    maxHeight: 760,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    roundedCorners: false,
+    resizable: !appState.settings.desktopBoardLocked,
+    movable: !appState.settings.desktopBoardLocked,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: false,
+    skipTaskbar: true,
+    title: '轻笺 · 桌面任务板',
+    icon: iconPath(),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  desktopBoardWindow.setMenuBarVisibility(false);
+  desktopBoardWindow.loadFile(path.join(__dirname, 'desktop-board.html'));
+  desktopBoardWindow.once('ready-to-show', () => {
+    applyDesktopBoardLock();
+    if (appState.settings.desktopBoardEnabled) {
+      desktopBoardWindow.showInactive();
+      attachDesktopBoardToDesktop();
+    }
+  });
+  desktopBoardWindow.on('move', rememberDesktopBoardBounds);
+  desktopBoardWindow.on('resize', rememberDesktopBoardBounds);
+  desktopBoardWindow.on('focus', attachDesktopBoardToDesktop);
+  desktopBoardWindow.on('close', event => {
+    if (isQuitting) return;
+    event.preventDefault();
+    updateSetting('desktopBoardEnabled', false);
+  });
+  desktopBoardWindow.on('closed', () => { desktopBoardWindow = null; });
+  return desktopBoardWindow;
+}
+
+function showDesktopBoard() {
+  appState.settings.desktopBoardEnabled = true;
+  const board = createDesktopBoardWindow();
+  if (!board.isDestroyed() && !board.isVisible()) board.showInactive();
+  applyDesktopBoardLock();
+  attachDesktopBoardToDesktop();
+  persistState();
+  rebuildTrayMenu();
+  broadcast('app:setting-changed', { key: 'desktopBoardEnabled', value: true });
+  return true;
+}
+
+function hideDesktopBoard() {
+  appState.settings.desktopBoardEnabled = false;
+  if (desktopBoardWindow && !desktopBoardWindow.isDestroyed()) desktopBoardWindow.hide();
+  persistState();
+  rebuildTrayMenu();
+  broadcast('app:setting-changed', { key: 'desktopBoardEnabled', value: false });
+  return false;
+}
+
 function resizeTargetFromSender(sender) {
   const target = BrowserWindow.fromWebContents(sender);
   if (!target || target.isDestroyed()) return null;
-  if (target !== mainWindow && target !== settingsWindow) return null;
+  if (target !== mainWindow && target !== settingsWindow && target !== desktopBoardWindow) return null;
   if (target === mainWindow && widgetMode) return null;
+  if (target === desktopBoardWindow && appState.settings.desktopBoardLocked) return null;
   return target;
 }
 
@@ -566,6 +756,11 @@ function finishWindowResize(sender) {
     broadcast('app:main-bounds', bounds);
   }
   if (bounds && resize.target === settingsWindow) settingsWindowExpandedBounds = bounds;
+  if (bounds && resize.target === desktopBoardWindow) {
+    appState.desktopBoardBounds = bounds;
+    persistState(true);
+    attachDesktopBoardToDesktop();
+  }
   activeWindowResize = null;
   return bounds || true;
 }
@@ -619,6 +814,10 @@ function rebuildTrayMenu() {
       label: widgetMode ? '退出桌面小部件' : '收成桌面小部件',
       click: () => widgetMode ? exitWidgetMode() : enterWidgetMode()
     },
+    {
+      label: '桌面任务板', type: 'checkbox', checked: Boolean(appState.settings.desktopBoardEnabled),
+      click: item => updateSetting('desktopBoardEnabled', item.checked)
+    },
     { label: '快速添加待办', click: () => { showWindow(); mainWindow.webContents.send('app:quick-add'); } },
     { type: 'separator' },
     {
@@ -656,6 +855,7 @@ function applyAutoLaunch(enabled) {
 }
 
 function updateSetting(key, value) {
+  if (key === 'desktopBoardEnabled') return value ? showDesktopBoard() : hideDesktopBoard();
   appState.settings[key] = value;
   if (key === 'alwaysOnTop' && mainWindow && !widgetMode) mainWindow.setAlwaysOnTop(Boolean(value));
   if (key === 'windowOpacity' && mainWindow && !widgetMode) mainWindow.setOpacity(clamp(Number(value), 0.55, 1));
@@ -664,6 +864,11 @@ function updateSetting(key, value) {
   if (key === 'edgeHide') setEdgeHide(Boolean(value));
   if (key === 'autoLaunch') appState.settings.autoLaunch = applyAutoLaunch(Boolean(value));
   if (key === 'theme') nativeTheme.themeSource = ['light', 'dark', 'system'].includes(value) ? value : 'system';
+  if (key === 'desktopBoardLocked') {
+    appState.settings.desktopBoardLocked = Boolean(value);
+    applyDesktopBoardLock();
+    attachDesktopBoardToDesktop();
+  }
   persistState();
   rebuildTrayMenu();
   broadcast('app:setting-changed', { key, value: appState.settings[key] });
@@ -1005,7 +1210,7 @@ function checkReminders() {
   }
   if (changed) {
     persistState(true);
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:state-updated', appState);
+    broadcastState();
   }
 }
 
@@ -1104,6 +1309,9 @@ function applyLoadedStateToRuntime() {
   }
   nativeTheme.themeSource = appState.settings.theme || 'light';
   applyAutoLaunch(Boolean(appState.settings.autoLaunch));
+  if (appState.settings.desktopBoardEnabled) showDesktopBoard();
+  else if (desktopBoardWindow && !desktopBoardWindow.isDestroyed()) desktopBoardWindow.hide();
+  applyDesktopBoardLock();
   rebuildTrayMenu();
 }
 
@@ -1364,6 +1572,42 @@ function registerIpc() {
     return appState.settings;
   });
   ipcMain.handle('settings:set', (_event, key, value) => updateSetting(key, value));
+  ipcMain.handle('desktop-board:action', (_event, action) => {
+    if (action === 'show') return showDesktopBoard();
+    if (action === 'hide') return hideDesktopBoard();
+    if (action === 'toggle-lock') return updateSetting('desktopBoardLocked', !appState.settings.desktopBoardLocked);
+    if (action === 'open-main') { showWindow(); return true; }
+    if (action === 'reattach') { attachDesktopBoardToDesktop(); return true; }
+    return false;
+  });
+  ipcMain.handle('desktop-board:select-note', (_event, noteId) => {
+    if (!appState.notes.some(note => note.id === noteId)) return false;
+    appState.activeNoteId = noteId;
+    persistState();
+    broadcastState();
+    return true;
+  });
+  ipcMain.handle('desktop-board:complete-task', async (_event, payload) => {
+    const note = appState.notes.find(item => item.id === payload?.noteId);
+    const task = note?.tasks?.find(item => item.id === payload?.taskId);
+    if (!task || task.done) return false;
+    task.done = true;
+    await persistState(true);
+    broadcastState();
+    return true;
+  });
+  ipcMain.handle('desktop-board:open-task', (_event, payload) => {
+    const note = appState.notes.find(item => item.id === payload?.noteId);
+    const task = note?.tasks?.find(item => item.id === payload?.taskId);
+    if (!note || !task) return false;
+    showWindow();
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:open-reminder', { noteId: note.id, taskId: task.id });
+      }
+    }, 120);
+    return true;
+  });
   ipcMain.handle('reminder:test', () => deliverReminder({
     noteId: appState.activeNoteId,
     taskId: '',
@@ -1551,6 +1795,7 @@ else {
     registerIpc();
     createWindow();
     createTray();
+    if (appState.settings.desktopBoardEnabled) createDesktopBoardWindow();
     setInterval(checkReminders, 5000);
     setTimeout(checkReminders, 3000);
   }).catch(async error => {
@@ -1574,6 +1819,7 @@ else {
 app.on('before-quit', () => {
   isQuitting = true;
   if (appState && mainWindow && !widgetMode && !edgeHidden && !mainWindow.isMaximized()) appState.windowBounds = mainWindow.getBounds();
+  if (appState && desktopBoardWindow && !desktopBoardWindow.isDestroyed()) appState.desktopBoardBounds = desktopBoardWindow.getBounds();
   if (appState) persistState(true);
 });
 app.on('window-all-closed', () => {});

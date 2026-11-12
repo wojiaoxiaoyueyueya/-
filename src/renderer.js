@@ -441,6 +441,8 @@ function syncSettingControls() {
   $('#clearWidgetBackground').disabled = !s.widgetBackgroundImagePath;
   setValue('themeSelect', s.theme);
   setValue('closeBehavior', s.closeBehavior || 'widget');
+  setValue('desktopBoardScope', s.desktopBoardScope || 'active');
+  setValue('desktopBoardStyle', s.desktopBoardStyle || 'glass');
   setValue('widgetWidth', s.widgetWidth);
   setValue('widgetOpacity', Math.round(s.widgetOpacity * 100));
   setValue('widgetBackgroundOpacity', Math.round(s.widgetBackgroundOpacity * 100));
@@ -451,7 +453,7 @@ function syncSettingControls() {
   $('#widgetBackgroundImageOpacityValue').value = `${Math.round(s.widgetBackgroundImageOpacity * 100)}%`;
   if ($('#dataDirectoryPath')) $('#dataDirectoryPath').textContent = dataDirectoryPath || '正在读取…';
   syncMainWindowSize();
-  ['alwaysOnTop', 'edgeHide', 'autoLaunch', 'playSound', 'showCompleted', 'widgetDockLeft', 'widgetAutoExpand', 'rememberWidgetMode'].forEach(key => {
+  ['alwaysOnTop', 'edgeHide', 'autoLaunch', 'playSound', 'showCompleted', 'widgetDockLeft', 'widgetAutoExpand', 'rememberWidgetMode', 'desktopBoardEnabled', 'desktopBoardLocked'].forEach(key => {
     const control = $(`#${key}`);
     if (control && !activeSettingControls.has(key)) control.checked = Boolean(s[key]);
   });
@@ -1374,7 +1376,14 @@ function bindEvents() {
   });
   $('#closeBehavior').addEventListener('change', () => changeSystemSetting('closeBehavior', $('#closeBehavior').value));
   $('#themeSelect').addEventListener('change', () => changeSystemSetting('theme', $('#themeSelect').value));
-  ['alwaysOnTop', 'edgeHide', 'autoLaunch', 'playSound', 'showCompleted', 'widgetDockLeft', 'widgetAutoExpand', 'rememberWidgetMode'].forEach(key => {
+  $('#desktopBoardScope').addEventListener('change', () => changeSystemSetting('desktopBoardScope', $('#desktopBoardScope').value));
+  $('#desktopBoardStyle').addEventListener('change', () => changeSystemSetting('desktopBoardStyle', $('#desktopBoardStyle').value));
+  $('#showDesktopBoardBtn').addEventListener('click', async () => {
+    if (!state.settings.desktopBoardEnabled) await changeSystemSetting('desktopBoardEnabled', true);
+    else await api.desktopBoardAction('show');
+    toast('桌面任务板已显示，可在桌面空白处查看');
+  });
+  ['alwaysOnTop', 'edgeHide', 'autoLaunch', 'playSound', 'showCompleted', 'widgetDockLeft', 'widgetAutoExpand', 'rememberWidgetMode', 'desktopBoardEnabled', 'desktopBoardLocked'].forEach(key => {
     $(`#${key}`).addEventListener('change', () => changeSystemSetting(key, $(`#${key}`).checked));
   });
   $('#testReminderBtn').addEventListener('click', async () => {

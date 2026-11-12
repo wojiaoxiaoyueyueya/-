@@ -96,10 +96,10 @@ try {
         hasImage: document.querySelector('#mainBackgroundLayer')?.style.backgroundImage?.startsWith('url(')
       };
     })()`);
-    if (result?.version === 6 && result?.opacity === .62 && result?.layerOpacity === '0.62' && result?.hasImage) break;
+    if (result?.version === 7 && result?.opacity === .62 && result?.layerOpacity === '0.62' && result?.hasImage) break;
     await delay(120);
   }
-  assert(result?.version === 6, 'Version 5 state was not migrated to version 6');
+  assert(result?.version === 7, 'Version 5 state was not migrated to version 7');
   assert(result?.opacity === .62, 'Hidden saved background opacity was not restored to 62%');
   assert(result?.layerOpacity === '0.62' && result?.hasImage, 'Recovered background was not rendered');
 
@@ -107,11 +107,11 @@ try {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     try {
       persisted = JSON.parse(await fs.readFile(path.join(dataDirectory, 'state.json'), 'utf8'));
-      if (persisted.version === 6 && persisted.settings?.backgroundImageOpacity === .62) break;
+      if (persisted.version === 7 && persisted.settings?.backgroundImageOpacity === .62) break;
     } catch { /* Startup migration is still being written. */ }
     await delay(100);
   }
-  assert(persisted.version === 6 && persisted.settings.backgroundImageOpacity === .62, 'Recovered background was not persisted');
+  assert(persisted.version === 7 && persisted.settings.backgroundImageOpacity === .62, 'Recovered background was not persisted');
   console.log(JSON.stringify({ ...result, persisted: true, passed: true }, null, 2));
 } catch (error) {
   console.error(error.stack || error.message);

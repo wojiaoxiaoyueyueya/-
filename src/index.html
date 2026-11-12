@@ -186,7 +186,7 @@
   <dialog id="settingsDialog" class="modal settings-modal">
     <form method="dialog">
       <div class="modal-head settings-drag-handle" id="settingsDragHandle">
-        <div><span class="eyebrow">轻笺 1.8.1 · 实时预览</span><h2>偏好设置</h2></div>
+        <div><span class="eyebrow">轻笺 1.9.0 · 实时预览</span><h2>偏好设置</h2></div>
         <div class="settings-head-actions">
           <button type="button" class="icon-btn" id="settingsMinimizeBtn" aria-label="最小化设置到任务栏" title="最小化到 Windows 任务栏" data-icon="minus"></button>
           <button type="button" class="icon-btn" id="settingsMaximizeBtn" aria-label="最大化或还原设置" title="最大化或还原" data-icon="square"></button>
@@ -206,6 +206,7 @@
           <button type="button" class="active" data-settings-section="appearance"><span data-icon="palette"></span><span>主页面</span></button>
           <button type="button" data-settings-section="window"><span data-icon="panel"></span><span>窗口</span></button>
           <button type="button" data-settings-section="widget"><span data-icon="widget"></span><span>小胶囊</span></button>
+          <button type="button" data-settings-section="desktop"><span data-icon="check-all"></span><span>桌面板</span></button>
           <button type="button" data-settings-section="data"><span data-icon="folder"></span><span>数据</span></button>
         </nav>
         <div class="settings-scroll" id="settingsScroll">
@@ -267,6 +268,16 @@
             <div class="range-setting"><div class="setting-row slider-row"><div><strong>小部件宽度</strong><small>可在 280–420 像素之间调整</small></div><output id="widgetWidthValue">330 px</output></div><input class="range" id="widgetWidth" type="range" min="280" max="420" step="10"></div>
           </div>
         </section>
+        <section class="setting-section" data-settings-panel="desktop" hidden>
+          <h3>桌面任务板</h3>
+          <div class="setting-card switches">
+            <label class="setting-row"><div><strong>显示桌面任务板</strong><small>独立于小胶囊，只停留在 Windows 桌面层，不遮挡其他软件</small></div><span class="switch"><input type="checkbox" id="desktopBoardEnabled"><span></span></span></label>
+            <label class="setting-row"><div><strong>锁定任务板位置</strong><small>锁定后不能拖动或缩放，避免误操作</small></div><span class="switch"><input type="checkbox" id="desktopBoardLocked"><span></span></span></label>
+            <div class="setting-row"><div><strong>显示范围</strong><small>跟随当前便签，或汇总全部未完成任务</small></div><select id="desktopBoardScope"><option value="active">当前便签</option><option value="all">全部便签</option></select></div>
+            <div class="setting-row"><div><strong>玻璃质感</strong><small>调整桌面任务板的清晰度和透明感</small></div><select id="desktopBoardStyle"><option value="clear">清晰</option><option value="glass">玻璃</option><option value="airy">轻透</option></select></div>
+            <div class="setting-row desktop-board-action-row"><div><strong>立即查看</strong><small>勾选任务后会用轻快动画收起，并同步完成状态</small></div><button type="button" class="setting-action-btn" id="showDesktopBoardBtn">显示任务板</button></div>
+          </div>
+        </section>
         <section class="setting-section" data-settings-panel="data" hidden>
           <h3>数据</h3>
           <div class="setting-card data-card">
@@ -278,7 +289,7 @@
             </div>
           </div>
         </section>
-        <p class="version">轻笺 1.8.1 · 数据仅保存在本机</p>
+        <p class="version">轻笺 1.9.0 · 数据仅保存在本机</p>
         </div>
       </div>
     </form>

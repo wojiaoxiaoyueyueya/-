@@ -21,8 +21,8 @@ await fs.writeFile(path.join(isolatedUserData, 'data-location.json'), JSON.strin
 }, null, 2), 'utf8');
 const port = 9333 + Math.floor(Math.random() * 300);
 const args = packaged
-  ? [`--remote-debugging-port=${port}`, '--test-mode', '--test-recovery-create']
-  : [`--remote-debugging-port=${port}`, project, '--test-mode', '--test-recovery-create'];
+  ? [`--remote-debugging-port=${port}`, '--test-mode', '--test-recovery-create', ...(process.env.LINGJIAN_TEST_DESKTOP_HOST ? ['--test-desktop-host'] : [])]
+  : [`--remote-debugging-port=${port}`, project, '--test-mode', '--test-recovery-create', ...(process.env.LINGJIAN_TEST_DESKTOP_HOST ? ['--test-desktop-host'] : [])];
 
 const child = spawn(executable, args, { cwd: project, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
 let childLog = '';
@@ -114,6 +114,7 @@ async function waitForValue(client, expression, predicate = Boolean, timeout = 1
 
 let main;
 let settings;
+let desktopBoard;
 try {
   const mainTarget = await waitForTarget(item => item.type === 'page' && /index\.html(?:$|#)/.test(item.url));
   main = await connect(mainTarget);
@@ -172,9 +173,80 @@ try {
     document.querySelector('[data-settings-section="appearance"]').click();
     return result;
   })()`);
-  assert(settingsNavigation.length === 4 && settingsNavigation.every(item => item.active && item.visible.length === 1 && item.visible[0] === item.section),
+  assert(settingsNavigation.length === 5 && settingsNavigation.every(item => item.active && item.visible.length === 1 && item.visible[0] === item.section),
     'Settings category navigation did not isolate each panel');
   assert(settingsNavigation.every(item => item.overflow === 0), 'A settings category overflows horizontally');
+
+  const desktopBoardTask = await main.evaluate(`(async () => {
+    const note = state.notes[0];
+    state.activeNoteId = note.id;
+    const task = {
+      id: 'desktop-board-test-' + Date.now(),
+      text: '桌面任务板完成动画测试',
+      details: '验证任务与主界面实时同步',
+      done: false,
+      color: '#72A7E8',
+      priority: 'high',
+      quantity: 2,
+      createdAt: Date.now(),
+      reminder: { enabled: false, at: '', repeat: 'none', lastNotifiedAt: '' }
+    };
+    note.tasks.unshift(task);
+    await window.lingjian.saveState(state);
+    await window.lingjian.setSetting('desktopBoardEnabled', true);
+    return { noteId: note.id, taskId: task.id };
+  })()`);
+  const desktopBoardTarget = await waitForTarget(item => item.type === 'page' && item.url.includes('desktop-board.html'));
+  desktopBoard = await connect(desktopBoardTarget);
+  await waitForValue(desktopBoard, `Boolean(window.lingjian && document.querySelector('.desktop-board') && document.querySelector('[data-task-id="${desktopBoardTask.taskId}"]'))`, Boolean);
+  if (process.env.LINGJIAN_TEST_DESKTOP_HOST) await waitForValue(desktopBoard, `boardState.attached === true`, Boolean, 10000);
+  const desktopBoardInitial = await desktopBoard.evaluate(`(() => {
+    const shell = document.querySelector('.desktop-board').getBoundingClientRect();
+    const item = document.querySelector('[data-task-id="${desktopBoardTask.taskId}"]');
+    return {
+      size: [innerWidth, innerHeight],
+      shell: [shell.left, shell.top, shell.right, shell.bottom],
+      taskText: item?.textContent,
+      resizeHandles: document.querySelectorAll('[data-resize-edge]').length,
+      locked: document.body.classList.contains('locked'),
+      attached: boardState.attached,
+      skipTaskbarLabel: document.querySelector('.desktop-badge')?.textContent
+    };
+  })()`);
+  assert(desktopBoardInitial.shell.join(',') === `0,0,${desktopBoardInitial.size[0]},${desktopBoardInitial.size[1]}`,
+    `Desktop board does not fill its transparent window: ${JSON.stringify(desktopBoardInitial)}`);
+  assert(desktopBoardInitial.taskText.includes('桌面任务板完成动画测试') && desktopBoardInitial.resizeHandles === 8,
+    'Desktop board did not render synchronized tasks or resize handles');
+  assert(!desktopBoardInitial.locked && desktopBoardInitial.skipTaskbarLabel === '桌面层', 'Desktop board initial interaction state is incorrect');
+  if (process.env.LINGJIAN_TEST_DESKTOP_HOST) assert(desktopBoardInitial.attached === true, 'Desktop board was not attached to the Windows desktop host');
+  const desktopBoardAnimation = await desktopBoard.evaluate(`(async () => {
+    const item = document.querySelector('[data-task-id="${desktopBoardTask.taskId}"]');
+    item.querySelector('.task-check').click();
+    await new Promise(resolve => setTimeout(resolve, 80));
+    const animated = document.querySelector('[data-task-id="${desktopBoardTask.taskId}"]') || item;
+    const during = {
+      completing: animated.classList.contains('completing'),
+      animation: getComputedStyle(animated).animationName,
+      opacity: getComputedStyle(animated).opacity
+    };
+    await new Promise(resolve => setTimeout(resolve, 520));
+    return {
+      during,
+      removed: !document.querySelector('[data-task-id="${desktopBoardTask.taskId}"]')
+    };
+  })()`);
+  assert(desktopBoardAnimation.during.completing && desktopBoardAnimation.during.animation === 'task-swish',
+    `Desktop completion animation did not start: ${JSON.stringify(desktopBoardAnimation)}`);
+  assert(desktopBoardAnimation.removed, 'Completed task did not disappear from the desktop board');
+  const completedInMain = await main.evaluate(`state.notes.find(note => note.id === ${JSON.stringify(desktopBoardTask.noteId)}).tasks.find(task => task.id === ${JSON.stringify(desktopBoardTask.taskId)}).done`);
+  assert(completedInMain === true, 'Desktop board completion did not synchronize back to the main state');
+  const desktopBoardLock = await desktopBoard.evaluate(`(async () => {
+    document.querySelector('#boardLockBtn').click();
+    await new Promise(resolve => setTimeout(resolve, 180));
+    return { locked: document.body.classList.contains('locked'), button: document.querySelector('#boardLockBtn').textContent };
+  })()`);
+  assert(desktopBoardLock.locked && desktopBoardLock.button === '◆', 'Desktop board lock did not update');
+  console.log('[ui-smoke] 桌面任务板同步、动画与锁定测试通过');
 
   const widgetPreviewImage = path.join(selectedDataDirectory, 'backgrounds', 'widget-preview-test.bmp');
   await fs.mkdir(path.dirname(widgetPreviewImage), { recursive: true });
@@ -561,6 +633,7 @@ try {
   process.exitCode = 1;
 } finally {
   settings?.socket.close();
+  desktopBoard?.socket.close();
   main?.socket.close();
   await delay(300);
   if (!child.killed) child.kill();

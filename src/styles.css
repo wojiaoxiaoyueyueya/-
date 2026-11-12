@@ -722,8 +722,8 @@ body.edge-right .edge-handle { left: 0; border-radius: 0 9px 9px 0; }
 
 @media (max-width: 620px) {
   .settings-layout { grid-template-columns: minmax(0,1fr); grid-template-rows: auto minmax(0,1fr); }
-  .settings-nav { flex-direction: row; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 5px; padding: 8px 10px; overflow: hidden; border-right: 0; border-bottom: 1px solid var(--line); }
-  .settings-nav button { min-width: 0; min-height: 36px; justify-content: center; gap: 5px; padding: 0 5px; text-align: center; }
+  .settings-nav { flex-direction: row; display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 3px; padding: 8px 8px; overflow: hidden; border-right: 0; border-bottom: 1px solid var(--line); }
+  .settings-nav button { min-width: 0; min-height: 36px; justify-content: center; gap: 3px; padding: 0 2px; text-align: center; font-size: 10.5px; }
   .settings-nav button svg { width: 14px; height: 14px; }
   .settings-scroll { padding-left: 13px; padding-right: 13px; }
   .image-setting { grid-template-columns: minmax(0,1fr); padding-top: 10px; padding-bottom: 10px; }
