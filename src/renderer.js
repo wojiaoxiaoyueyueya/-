@@ -65,8 +65,8 @@ let widgetPreviewHideTimer = null;
 let widgetPreviewFinishTimer = null;
 let settingsPanelPosition = null;
 let settingsPanelDrag = null;
-let backgroundImageData = { main: '', widget: '' };
-let backgroundImageStatus = { main: null, widget: null };
+let backgroundImageData = { main: '', widget: '', desktopBoard: '' };
+let backgroundImageStatus = { main: null, widget: null, desktopBoard: null };
 let mainWindowBounds = { width: 920, height: 680 };
 let dataDirectoryPath = '';
 let resizeGesture = null;
@@ -75,7 +75,7 @@ let appearanceFrame = null;
 let appearanceAdjustingTimer = null;
 let pendingAppearancePatch = {};
 let pendingWidgetPreview = false;
-let backgroundLoadSequence = { main: 0, widget: 0 };
+let backgroundLoadSequence = { main: 0, widget: 0, desktopBoard: 0 };
 let activeSettingsSection = 'appearance';
 let mainResizeFrame = null;
 const dirtySettingKeys = new Set();
@@ -406,6 +406,9 @@ function syncSettingControls() {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const dark = s.theme === 'dark' || (s.theme === 'system' && prefersDark);
   const automaticText = dark ? '#F1F1F4' : '#292B32';
+  const boardTheme = s.desktopBoardTheme === 'inherit' ? s.theme : (s.desktopBoardTheme || 'inherit');
+  const boardDark = boardTheme === 'dark' || (boardTheme === 'system' && prefersDark);
+  const automaticBoardText = boardDark ? '#F3F3F5' : '#24262C';
   const setValue = (id, value) => {
     const control = $(`#${id}`);
     if (!control) return;
@@ -414,10 +417,13 @@ function syncSettingControls() {
   };
   setValue('backgroundColor', s.background);
   setValue('widgetBackgroundColor', s.widgetBackground || s.background);
+  setValue('desktopBoardBackgroundColor', s.desktopBoardBackground || s.background);
   setValue('mainTextColor', s.mainTextColor || automaticText);
   setValue('widgetTextColor', s.widgetTextColor || automaticText);
+  setValue('desktopBoardTextColor', s.desktopBoardTextColor || automaticBoardText);
   $('#resetMainTextColor').classList.toggle('active', !s.mainTextColor);
   $('#resetWidgetTextColor').classList.toggle('active', !s.widgetTextColor);
+  $('#resetDesktopBoardTextColor').classList.toggle('active', !s.desktopBoardTextColor);
   setValue('backgroundOpacity', Math.round(s.backgroundOpacity * 100));
   setValue('backgroundImageOpacity', Math.round(s.backgroundImageOpacity * 100));
   setValue('windowOpacity', Math.round(s.windowOpacity * 100));
@@ -426,6 +432,7 @@ function syncSettingControls() {
   $('#windowOpacityValue').value = `${Math.round(s.windowOpacity * 100)}%`;
   setValue('backgroundFit', s.backgroundFit);
   setValue('widgetBackgroundFit', s.widgetBackgroundFit);
+  setValue('desktopBoardBackgroundFit', s.desktopBoardBackgroundFit || 'cover');
   const backgroundLabel = (target, name, path, opacity) => {
     const status = backgroundImageStatus[target];
     if (!path) return '未设置图片';
@@ -435,14 +442,23 @@ function syncSettingControls() {
   };
   $('#mainBackgroundImageName').textContent = backgroundLabel('main', s.backgroundImageName, s.backgroundImagePath, s.backgroundImageOpacity);
   $('#widgetBackgroundImageName').textContent = backgroundLabel('widget', s.widgetBackgroundImageName, s.widgetBackgroundImagePath, s.widgetBackgroundImageOpacity);
+  $('#desktopBoardBackgroundImageName').textContent = backgroundLabel('desktopBoard', s.desktopBoardBackgroundImageName, s.desktopBoardBackgroundImagePath, s.desktopBoardBackgroundImageOpacity);
   $('#restoreMainBackground').disabled = !s.backgroundImagePath;
   $('#clearMainBackground').disabled = !s.backgroundImagePath;
   $('#restoreWidgetBackground').disabled = !s.widgetBackgroundImagePath;
   $('#clearWidgetBackground').disabled = !s.widgetBackgroundImagePath;
+  $('#restoreDesktopBoardBackground').disabled = !s.desktopBoardBackgroundImagePath;
+  $('#clearDesktopBoardBackground').disabled = !s.desktopBoardBackgroundImagePath;
   setValue('themeSelect', s.theme);
   setValue('closeBehavior', s.closeBehavior || 'widget');
   setValue('desktopBoardScope', s.desktopBoardScope || 'active');
   setValue('desktopBoardStyle', s.desktopBoardStyle || 'glass');
+  setValue('desktopBoardTheme', s.desktopBoardTheme || 'inherit');
+  setValue('desktopBoardBackgroundOpacity', Math.round((s.desktopBoardBackgroundOpacity ?? 0.72) * 100));
+  setValue('desktopBoardBackgroundImageOpacity', Math.round((s.desktopBoardBackgroundImageOpacity ?? 0.55) * 100));
+  setValue('desktopBoardOpacity', Math.round((s.desktopBoardOpacity ?? 0.96) * 100));
+  setValue('desktopBoardBrightness', Math.round((s.desktopBoardBrightness ?? 1) * 100));
+  setValue('desktopBoardBlur', Math.round(s.desktopBoardBlur ?? 28));
   setValue('widgetWidth', s.widgetWidth);
   setValue('widgetOpacity', Math.round(s.widgetOpacity * 100));
   setValue('widgetBackgroundOpacity', Math.round(s.widgetBackgroundOpacity * 100));
@@ -451,6 +467,11 @@ function syncSettingControls() {
   $('#widgetOpacityValue').value = `${Math.round(s.widgetOpacity * 100)}%`;
   $('#widgetBackgroundOpacityValue').value = `${Math.round(s.widgetBackgroundOpacity * 100)}%`;
   $('#widgetBackgroundImageOpacityValue').value = `${Math.round(s.widgetBackgroundImageOpacity * 100)}%`;
+  $('#desktopBoardBackgroundOpacityValue').value = `${Math.round((s.desktopBoardBackgroundOpacity ?? 0.72) * 100)}%`;
+  $('#desktopBoardBackgroundImageOpacityValue').value = `${Math.round((s.desktopBoardBackgroundImageOpacity ?? 0.55) * 100)}%`;
+  $('#desktopBoardOpacityValue').value = `${Math.round((s.desktopBoardOpacity ?? 0.96) * 100)}%`;
+  $('#desktopBoardBrightnessValue').value = `${Math.round((s.desktopBoardBrightness ?? 1) * 100)}%`;
+  $('#desktopBoardBlurValue').value = `${Math.round(s.desktopBoardBlur ?? 28)} px`;
   if ($('#dataDirectoryPath')) $('#dataDirectoryPath').textContent = dataDirectoryPath || '正在读取…';
   syncMainWindowSize();
   ['alwaysOnTop', 'edgeHide', 'autoLaunch', 'playSound', 'showCompleted', 'widgetDockLeft', 'widgetAutoExpand', 'rememberWidgetMode', 'desktopBoardEnabled', 'desktopBoardLocked'].forEach(key => {
@@ -840,6 +861,7 @@ function openNoteDialog(mode = 'create') {
 function renderBackgroundPresets() {
   renderBackgroundPresetGroup('#backgroundPresets', 'background');
   renderBackgroundPresetGroup('#widgetBackgroundPresets', 'widgetBackground');
+  renderBackgroundPresetGroup('#desktopBoardBackgroundPresets', 'desktopBoardBackground');
 }
 
 function renderBackgroundPresetGroup(selector, settingKey) {
@@ -863,10 +885,14 @@ async function chooseBackground(target) {
   const result = await api.chooseBackgroundImage(target);
   if (result.canceled) return;
   if (result.error) return toast(result.error);
+  const targetConfig = {
+    main: { pathKey: 'backgroundImagePath', nameKey: 'backgroundImageName', opacityKey: 'backgroundImageOpacity', label: '主页面' },
+    widget: { pathKey: 'widgetBackgroundImagePath', nameKey: 'widgetBackgroundImageName', opacityKey: 'widgetBackgroundImageOpacity', label: '胶囊' },
+    desktopBoard: { pathKey: 'desktopBoardBackgroundImagePath', nameKey: 'desktopBoardBackgroundImageName', opacityKey: 'desktopBoardBackgroundImageOpacity', label: '桌面板' }
+  }[target];
+  if (!targetConfig) return;
   const isWidget = target === 'widget';
-  const pathKey = isWidget ? 'widgetBackgroundImagePath' : 'backgroundImagePath';
-  const nameKey = isWidget ? 'widgetBackgroundImageName' : 'backgroundImageName';
-  const opacityKey = isWidget ? 'widgetBackgroundImageOpacity' : 'backgroundImageOpacity';
+  const { pathKey, nameKey, opacityKey } = targetConfig;
   state.settings[pathKey] = result.path;
   state.settings[nameKey] = result.name;
   if (Number.isFinite(Number(result.opacity))) state.settings[opacityKey] = Number(result.opacity);
@@ -874,7 +900,7 @@ async function chooseBackground(target) {
   backgroundImageStatus[target] = { exists: true, path: result.path, name: result.name };
   applySettings();
   save(false);
-  toast(`${isWidget ? '胶囊' : '主页面'}背景图片已更新`);
+  toast(`${targetConfig.label}背景图片已更新`);
   if (isWidget) {
     renderWidgetPreview();
     showWidgetPreview(1600);
@@ -882,20 +908,31 @@ async function chooseBackground(target) {
 }
 
 function restoreBackground(target) {
+  const targetConfig = {
+    main: { pathKey: 'backgroundImagePath', opacityKey: 'backgroundImageOpacity', label: '主页面' },
+    widget: { pathKey: 'widgetBackgroundImagePath', opacityKey: 'widgetBackgroundImageOpacity', label: '胶囊' },
+    desktopBoard: { pathKey: 'desktopBoardBackgroundImagePath', opacityKey: 'desktopBoardBackgroundImageOpacity', label: '桌面板' }
+  }[target];
+  if (!targetConfig) return;
   const isWidget = target === 'widget';
-  const pathKey = isWidget ? 'widgetBackgroundImagePath' : 'backgroundImagePath';
-  const opacityKey = isWidget ? 'widgetBackgroundImageOpacity' : 'backgroundImageOpacity';
+  const { pathKey, opacityKey } = targetConfig;
   if (!state.settings[pathKey]) return toast('请先选择一张背景图片');
   queueAppearancePreview({ [opacityKey]: 0.62 }, { widgetPreview: isWidget });
   syncSettingControls();
-  toast(`${isWidget ? '胶囊' : '主页面'}背景已恢复显示`);
+  toast(`${targetConfig.label}背景已恢复显示`);
 }
 
 async function clearBackground(target) {
   await api.clearBackgroundImage(target);
+  const targetConfig = {
+    main: { pathKey: 'backgroundImagePath', nameKey: 'backgroundImageName' },
+    widget: { pathKey: 'widgetBackgroundImagePath', nameKey: 'widgetBackgroundImageName' },
+    desktopBoard: { pathKey: 'desktopBoardBackgroundImagePath', nameKey: 'desktopBoardBackgroundImageName' }
+  }[target];
+  if (!targetConfig) return;
   const isWidget = target === 'widget';
-  state.settings[isWidget ? 'widgetBackgroundImagePath' : 'backgroundImagePath'] = '';
-  state.settings[isWidget ? 'widgetBackgroundImageName' : 'backgroundImageName'] = '';
+  state.settings[targetConfig.pathKey] = '';
+  state.settings[targetConfig.nameKey] = '';
   backgroundImageData[target] = '';
   backgroundImageStatus[target] = null;
   applySettings();
@@ -918,11 +955,12 @@ async function loadBackgroundImageTarget(target, metadataOnly = false) {
 
 async function loadBackgroundImages() {
   const metadataOnly = settingsWindowMode;
-  const [mainImage, widgetImage] = await Promise.all([
+  const [mainImage, widgetImage, desktopBoardImage] = await Promise.all([
     loadBackgroundImageTarget('main', metadataOnly),
-    loadBackgroundImageTarget('widget', metadataOnly)
+    loadBackgroundImageTarget('widget', metadataOnly),
+    loadBackgroundImageTarget('desktopBoard', true)
   ]);
-  return Boolean(mainImage || widgetImage);
+  return Boolean(mainImage || widgetImage || desktopBoardImage);
 }
 
 function bindSettingsControlGuards() {
@@ -1287,10 +1325,13 @@ function bindEvents() {
 
   $('#backgroundColor').addEventListener('input', () => queueAppearancePreview({ background: $('#backgroundColor').value }));
   $('#widgetBackgroundColor').addEventListener('input', () => queueAppearancePreview({ widgetBackground: $('#widgetBackgroundColor').value }, { widgetPreview: true }));
+  $('#desktopBoardBackgroundColor').addEventListener('input', () => queueAppearancePreview({ desktopBoardBackground: $('#desktopBoardBackgroundColor').value }));
   $('#mainTextColor').addEventListener('input', () => queueAppearancePreview({ mainTextColor: $('#mainTextColor').value }));
   $('#resetMainTextColor').addEventListener('click', () => queueAppearancePreview({ mainTextColor: '' }));
   $('#widgetTextColor').addEventListener('input', () => queueAppearancePreview({ widgetTextColor: $('#widgetTextColor').value }, { widgetPreview: true }));
   $('#resetWidgetTextColor').addEventListener('click', () => queueAppearancePreview({ widgetTextColor: '' }, { widgetPreview: true }));
+  $('#desktopBoardTextColor').addEventListener('input', () => queueAppearancePreview({ desktopBoardTextColor: $('#desktopBoardTextColor').value }));
+  $('#resetDesktopBoardTextColor').addEventListener('click', () => queueAppearancePreview({ desktopBoardTextColor: '' }));
   $('#backgroundOpacity').addEventListener('input', () => {
     const value = Number($('#backgroundOpacity').value) / 100;
     $('#backgroundOpacityValue').value = `${$('#backgroundOpacity').value}%`;
@@ -1308,6 +1349,7 @@ function bindEvents() {
   });
   $('#backgroundFit').addEventListener('change', () => queueAppearancePreview({ backgroundFit: $('#backgroundFit').value }));
   $('#widgetBackgroundFit').addEventListener('change', () => queueAppearancePreview({ widgetBackgroundFit: $('#widgetBackgroundFit').value }, { widgetPreview: true }));
+  $('#desktopBoardBackgroundFit').addEventListener('change', () => queueAppearancePreview({ desktopBoardBackgroundFit: $('#desktopBoardBackgroundFit').value }));
   $('#widgetBackgroundOpacity').addEventListener('input', () => {
     const value = Number($('#widgetBackgroundOpacity').value) / 100;
     $('#widgetBackgroundOpacityValue').value = `${$('#widgetBackgroundOpacity').value}%`;
@@ -1328,6 +1370,31 @@ function bindEvents() {
     $('#widgetOpacityValue').value = `${$('#widgetOpacity').value}%`;
     queueAppearancePreview({ widgetOpacity: value }, { widgetPreview: true });
   });
+  $('#desktopBoardBackgroundOpacity').addEventListener('input', () => {
+    const value = Number($('#desktopBoardBackgroundOpacity').value) / 100;
+    $('#desktopBoardBackgroundOpacityValue').value = `${$('#desktopBoardBackgroundOpacity').value}%`;
+    queueAppearancePreview({ desktopBoardBackgroundOpacity: value });
+  });
+  $('#desktopBoardBackgroundImageOpacity').addEventListener('input', () => {
+    const value = Number($('#desktopBoardBackgroundImageOpacity').value) / 100;
+    $('#desktopBoardBackgroundImageOpacityValue').value = `${$('#desktopBoardBackgroundImageOpacity').value}%`;
+    queueAppearancePreview({ desktopBoardBackgroundImageOpacity: value });
+  });
+  $('#desktopBoardOpacity').addEventListener('input', () => {
+    const value = Number($('#desktopBoardOpacity').value) / 100;
+    $('#desktopBoardOpacityValue').value = `${$('#desktopBoardOpacity').value}%`;
+    queueAppearancePreview({ desktopBoardOpacity: value });
+  });
+  $('#desktopBoardBrightness').addEventListener('input', () => {
+    const value = Number($('#desktopBoardBrightness').value) / 100;
+    $('#desktopBoardBrightnessValue').value = `${$('#desktopBoardBrightness').value}%`;
+    queueAppearancePreview({ desktopBoardBrightness: value });
+  });
+  $('#desktopBoardBlur').addEventListener('input', () => {
+    const value = Number($('#desktopBoardBlur').value);
+    $('#desktopBoardBlurValue').value = `${value} px`;
+    queueAppearancePreview({ desktopBoardBlur: value });
+  });
   ['widgetBackgroundColor', 'widgetTextColor', 'widgetBackgroundOpacity', 'widgetBackgroundImageOpacity', 'widgetWidth', 'widgetOpacity'].forEach(id => {
     const control = $(`#${id}`);
     control.addEventListener('pointerdown', () => showWidgetPreview(0));
@@ -1347,6 +1414,9 @@ function bindEvents() {
   $('#chooseWidgetBackground').addEventListener('click', () => chooseBackground('widget'));
   $('#restoreWidgetBackground').addEventListener('click', () => restoreBackground('widget'));
   $('#clearWidgetBackground').addEventListener('click', () => clearBackground('widget'));
+  $('#chooseDesktopBoardBackground').addEventListener('click', () => chooseBackground('desktopBoard'));
+  $('#restoreDesktopBoardBackground').addEventListener('click', () => restoreBackground('desktopBoard'));
+  $('#clearDesktopBoardBackground').addEventListener('click', () => clearBackground('desktopBoard'));
   $('#mainAppearancePresets').addEventListener('click', event => {
     const button = event.target.closest('[data-appearance-preset]');
     const patches = {
@@ -1377,7 +1447,18 @@ function bindEvents() {
   $('#closeBehavior').addEventListener('change', () => changeSystemSetting('closeBehavior', $('#closeBehavior').value));
   $('#themeSelect').addEventListener('change', () => changeSystemSetting('theme', $('#themeSelect').value));
   $('#desktopBoardScope').addEventListener('change', () => changeSystemSetting('desktopBoardScope', $('#desktopBoardScope').value));
-  $('#desktopBoardStyle').addEventListener('change', () => changeSystemSetting('desktopBoardStyle', $('#desktopBoardStyle').value));
+  $('#desktopBoardTheme').addEventListener('change', () => changeSystemSetting('desktopBoardTheme', $('#desktopBoardTheme').value));
+  $('#desktopBoardStyle').addEventListener('change', async () => {
+    const value = $('#desktopBoardStyle').value;
+    const presets = {
+      clear: { desktopBoardBackgroundOpacity: 0.9, desktopBoardBackgroundImageOpacity: 0.28, desktopBoardOpacity: 1, desktopBoardBrightness: 1, desktopBoardBlur: 16 },
+      glass: { desktopBoardBackgroundOpacity: 0.72, desktopBoardBackgroundImageOpacity: 0.55, desktopBoardOpacity: 0.96, desktopBoardBrightness: 1, desktopBoardBlur: 28 },
+      airy: { desktopBoardBackgroundOpacity: 0.48, desktopBoardBackgroundImageOpacity: 0.74, desktopBoardOpacity: 0.9, desktopBoardBrightness: 1.08, desktopBoardBlur: 40 }
+    };
+    await changeSystemSetting('desktopBoardStyle', value);
+    queueAppearancePreview(presets[value]);
+    syncSettingControls();
+  });
   $('#showDesktopBoardBtn').addEventListener('click', async () => {
     if (!state.settings.desktopBoardEnabled) await changeSystemSetting('desktopBoardEnabled', true);
     else await api.desktopBoardAction('show');

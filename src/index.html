@@ -186,7 +186,7 @@
   <dialog id="settingsDialog" class="modal settings-modal">
     <form method="dialog">
       <div class="modal-head settings-drag-handle" id="settingsDragHandle">
-        <div><span class="eyebrow">轻笺 1.9.0 · 实时预览</span><h2>偏好设置</h2></div>
+        <div><span class="eyebrow">轻笺 1.10.0 · 实时预览</span><h2>偏好设置</h2></div>
         <div class="settings-head-actions">
           <button type="button" class="icon-btn" id="settingsMinimizeBtn" aria-label="最小化设置到任务栏" title="最小化到 Windows 任务栏" data-icon="minus"></button>
           <button type="button" class="icon-btn" id="settingsMaximizeBtn" aria-label="最大化或还原设置" title="最大化或还原" data-icon="square"></button>
@@ -269,11 +269,22 @@
           </div>
         </section>
         <section class="setting-section" data-settings-panel="desktop" hidden>
-          <h3>桌面任务板</h3>
+          <h3>桌面任务板外观与行为</h3>
           <div class="setting-card switches">
             <label class="setting-row"><div><strong>显示桌面任务板</strong><small>独立于小胶囊，只停留在 Windows 桌面层，不遮挡其他软件</small></div><span class="switch"><input type="checkbox" id="desktopBoardEnabled"><span></span></span></label>
             <label class="setting-row"><div><strong>锁定任务板位置</strong><small>锁定后不能拖动或缩放，避免误操作</small></div><span class="switch"><input type="checkbox" id="desktopBoardLocked"><span></span></span></label>
             <div class="setting-row"><div><strong>显示范围</strong><small>跟随当前便签，或汇总全部未完成任务</small></div><select id="desktopBoardScope"><option value="active">当前便签</option><option value="all">全部便签</option></select></div>
+            <div class="setting-row"><div><strong>界面模式</strong><small>可跟随主页面，也可让桌面板单独使用明暗主题</small></div><select id="desktopBoardTheme"><option value="inherit">跟随主页面</option><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></div>
+            <div class="setting-row color-setting"><div><strong>桌面板背景颜色</strong><small>与主页面和小胶囊互不覆盖</small></div><input type="color" id="desktopBoardBackgroundColor" aria-label="桌面任务板背景颜色"></div>
+            <div class="background-presets" id="desktopBoardBackgroundPresets"></div>
+            <div class="setting-row color-setting"><div><strong>桌面板文字颜色</strong><small>深色背景可切换浅色文字，也可恢复自动</small></div><div class="text-color-control"><button type="button" id="resetDesktopBoardTextColor">自动</button><input type="color" id="desktopBoardTextColor" aria-label="桌面任务板文字颜色"></div></div>
+            <div class="setting-row image-setting"><div><strong>桌面板背景图片</strong><small id="desktopBoardBackgroundImageName">未设置图片</small></div><div class="inline-actions"><button type="button" id="chooseDesktopBoardBackground"><span data-icon="image"></span>选择</button><button type="button" id="restoreDesktopBoardBackground">恢复显示</button><button type="button" id="clearDesktopBoardBackground">清除</button></div></div>
+            <div class="setting-row"><div><strong>图片显示方式</strong><small>铺满、完整显示或平铺</small></div><select id="desktopBoardBackgroundFit"><option value="cover">铺满窗口</option><option value="contain">完整显示</option><option value="repeat">平铺图片</option></select></div>
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>图片透明度</strong><small>实时调整桌面板背景图片浓淡</small></div><output id="desktopBoardBackgroundImageOpacityValue">55%</output></div><input class="range" id="desktopBoardBackgroundImageOpacity" type="range" min="0" max="100" step="1"></div>
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>底色透明度</strong><small>单独改变桌面板底色的通透程度</small></div><output id="desktopBoardBackgroundOpacityValue">72%</output></div><input class="range" id="desktopBoardBackgroundOpacity" type="range" min="20" max="100" step="1"></div>
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>整体透明度</strong><small>同时改变桌面板文字与控件</small></div><output id="desktopBoardOpacityValue">96%</output></div><input class="range" id="desktopBoardOpacity" type="range" min="55" max="100" step="1"></div>
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>背景亮度</strong><small>让较暗或较亮的照片更适合阅读</small></div><output id="desktopBoardBrightnessValue">100%</output></div><input class="range" id="desktopBoardBrightness" type="range" min="45" max="150" step="1"></div>
+            <div class="range-setting"><div class="setting-row slider-row"><div><strong>玻璃模糊</strong><small>调整桌面背景透过玻璃时的柔和程度</small></div><output id="desktopBoardBlurValue">28 px</output></div><input class="range" id="desktopBoardBlur" type="range" min="0" max="56" step="1"></div>
             <div class="setting-row"><div><strong>玻璃质感</strong><small>调整桌面任务板的清晰度和透明感</small></div><select id="desktopBoardStyle"><option value="clear">清晰</option><option value="glass">玻璃</option><option value="airy">轻透</option></select></div>
             <div class="setting-row desktop-board-action-row"><div><strong>立即查看</strong><small>勾选任务后会用轻快动画收起，并同步完成状态</small></div><button type="button" class="setting-action-btn" id="showDesktopBoardBtn">显示任务板</button></div>
           </div>
@@ -289,7 +300,7 @@
             </div>
           </div>
         </section>
-        <p class="version">轻笺 1.9.0 · 数据仅保存在本机</p>
+        <p class="version">轻笺 1.10.0 · 数据仅保存在本机</p>
         </div>
       </div>
     </form>

@@ -219,6 +219,74 @@ try {
     'Desktop board did not render synchronized tasks or resize handles');
   assert(!desktopBoardInitial.locked && desktopBoardInitial.skipTaskbarLabel === '桌面层', 'Desktop board initial interaction state is incorrect');
   if (process.env.LINGJIAN_TEST_DESKTOP_HOST) assert(desktopBoardInitial.attached === true, 'Desktop board was not attached to the Windows desktop host');
+
+  const desktopBoardAppearanceImage = path.join(selectedDataDirectory, 'backgrounds', 'desktop-board-appearance.bmp');
+  await fs.mkdir(path.dirname(desktopBoardAppearanceImage), { recursive: true });
+  const desktopBoardBitmap = Buffer.alloc(58);
+  desktopBoardBitmap.write('BM', 0, 2, 'ascii');
+  desktopBoardBitmap.writeUInt32LE(58, 2);
+  desktopBoardBitmap.writeUInt32LE(54, 10);
+  desktopBoardBitmap.writeUInt32LE(40, 14);
+  desktopBoardBitmap.writeInt32LE(1, 18);
+  desktopBoardBitmap.writeInt32LE(1, 22);
+  desktopBoardBitmap.writeUInt16LE(1, 26);
+  desktopBoardBitmap.writeUInt16LE(24, 28);
+  desktopBoardBitmap.writeUInt32LE(4, 34);
+  desktopBoardBitmap.set([0x66, 0x33, 0xcc, 0x00], 54);
+  await fs.writeFile(desktopBoardAppearanceImage, desktopBoardBitmap);
+  const desktopBoardAppearancePathLiteral = JSON.stringify(desktopBoardAppearanceImage);
+  await settings.evaluate(`(async () => {
+    Object.assign(state.settings, {
+      desktopBoardTheme: 'dark',
+      desktopBoardBackground: '#234567',
+      desktopBoardTextColor: '#F4EEDD',
+      desktopBoardBackgroundImagePath: ${desktopBoardAppearancePathLiteral},
+      desktopBoardBackgroundImageName: 'desktop-board-appearance.bmp',
+      desktopBoardBackgroundImageOpacity: .73,
+      desktopBoardBackgroundFit: 'contain',
+      desktopBoardBackgroundOpacity: .64,
+      desktopBoardOpacity: .91,
+      desktopBoardBrightness: 1.17,
+      desktopBoardBlur: 33
+    });
+    await window.lingjian.saveSettings({ ...state.settings });
+    document.querySelector('[data-settings-section="desktop"]').click();
+    await new Promise(resolve => setTimeout(resolve, 180));
+    const slider = document.querySelector('#desktopBoardBackgroundOpacity');
+    slider.value = '67';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    return {
+      panelVisible: !document.querySelector('[data-settings-panel="desktop"]').hidden,
+      ranges: document.querySelectorAll('[data-settings-panel="desktop"] input.range').length,
+      backgroundName: document.querySelector('#desktopBoardBackgroundImageName').textContent,
+      opacityOutput: document.querySelector('#desktopBoardBackgroundOpacityValue').value
+    };
+  })()`);
+  await delay(420);
+  const desktopBoardAppearance = await desktopBoard.evaluate(`(() => {
+    const root = getComputedStyle(document.documentElement);
+    const layer = document.querySelector('#desktopBoardBackgroundLayer');
+    return {
+      dark: document.body.classList.contains('theme-dark'),
+      backgroundRgb: root.getPropertyValue('--board-bg-rgb').trim(),
+      backgroundOpacity: root.getPropertyValue('--board-bg-opacity').trim(),
+      text: root.getPropertyValue('--board-text').trim(),
+      blur: root.getPropertyValue('--board-blur').trim(),
+      brightness: root.getPropertyValue('--board-brightness').trim(),
+      image: layer.style.backgroundImage,
+      imageOpacity: layer.style.opacity,
+      imageSize: layer.style.backgroundSize
+    };
+  })()`);
+  assert(desktopBoardAppearance.dark && desktopBoardAppearance.backgroundOpacity === '0.67',
+    `Desktop board theme or real-time background opacity did not update: ${JSON.stringify(desktopBoardAppearance)}`);
+  assert(desktopBoardAppearance.text.toLowerCase() === '#f4eedd' && desktopBoardAppearance.blur === '33px' && desktopBoardAppearance.brightness === '1.17',
+    `Desktop board independent appearance settings were not applied: ${JSON.stringify(desktopBoardAppearance)}`);
+  assert(desktopBoardAppearance.image.startsWith('url(') && desktopBoardAppearance.image.includes('data:image/bmp;base64,')
+    && desktopBoardAppearance.imageOpacity === '0.73' && desktopBoardAppearance.imageSize === 'contain',
+  `Desktop board background image was not rendered correctly: ${JSON.stringify(desktopBoardAppearance)}`);
+  console.log('[ui-smoke] 桌面任务板独立主题、背景图片与实时外观测试通过');
+
   const desktopBoardAnimation = await desktopBoard.evaluate(`(async () => {
     const item = document.querySelector('[data-task-id="${desktopBoardTask.taskId}"]');
     item.querySelector('.task-check').click();
@@ -246,6 +314,14 @@ try {
     return { locked: document.body.classList.contains('locked'), button: document.querySelector('#boardLockBtn').textContent };
   })()`);
   assert(desktopBoardLock.locked && desktopBoardLock.button === '◆', 'Desktop board lock did not update');
+  const desktopBoardHidden = await main.evaluate(`(async () => {
+    await window.lingjian.setSetting('desktopBoardEnabled', false);
+    await new Promise(resolve => setTimeout(resolve, 420));
+    return window.lingjian.desktopBoardStatus();
+  })()`);
+  assert(desktopBoardHidden.enabled === false && desktopBoardHidden.visible === false,
+    `Desktop board reappeared after being disabled: ${JSON.stringify(desktopBoardHidden)}`);
+  await main.evaluate(`window.lingjian.setSetting('desktopBoardEnabled', true)`);
   console.log('[ui-smoke] 桌面任务板同步、动画与锁定测试通过');
 
   const widgetPreviewImage = path.join(selectedDataDirectory, 'backgrounds', 'widget-preview-test.bmp');
@@ -453,7 +529,7 @@ try {
   assert(guardedEditStart.value === '61' && guardedEditStart.output === '61%', 'Window opacity did not enter the live editing state');
   assert(Number.parseFloat(guardedEditStart.visualProgress) > 13 && Number.parseFloat(guardedEditStart.visualProgress) < 14,
     'Window opacity slider did not repaint its progress in real time');
-  assert(guardedEditStart.rangeGroups === 9 && guardedEditStart.ungroupedRanges === 0, 'Settings sliders are not grouped with their labels and values');
+  assert(guardedEditStart.rangeGroups === 14 && guardedEditStart.ungroupedRanges === 0, 'Settings sliders are not grouped with their labels and values');
   assert(guardedEditStart.appearance === 'none', 'Settings slider still relies on the unstable native appearance');
   assert(guardedEditStart.controlHeight === 24 && guardedEditStart.pointerEvents !== 'none' && guardedEditStart.hitTarget === 'windowOpacity',
     `Custom slider is not interactive: ${JSON.stringify(guardedEditStart)}`);
@@ -555,7 +631,7 @@ try {
         opacityHitTarget: document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.id || ''
       };
     })()`);
-    assert(reopened.ranges === 9 && reopened.groupedRanges === 9 && reopened.rangeValuesReady,
+    assert(reopened.ranges === 14 && reopened.groupedRanges === 14 && reopened.rangeValuesReady,
       `Settings sliders were corrupted after reopen cycle ${cycle + 1}`);
     assert(reopened.selectsReady && reopened.horizontalOverflow === 0 && reopened.opacityHitTarget === 'windowOpacity',
       `Settings controls were misaligned after reopen cycle ${cycle + 1}`);

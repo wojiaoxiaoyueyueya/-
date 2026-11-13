@@ -113,7 +113,7 @@ function migrateLegacyDataIfNeeded() {
     if (fs.existsSync(legacyBackgrounds)) fs.cpSync(legacyBackgrounds, targetBackgrounds, { recursive: true });
     const migrated = JSON.parse(fs.readFileSync(legacyState, 'utf8'));
     const settings = migrated?.settings || {};
-    for (const key of ['backgroundImagePath', 'widgetBackgroundImagePath']) {
+    for (const key of ['backgroundImagePath', 'widgetBackgroundImagePath', 'desktopBoardBackgroundImagePath']) {
       const currentPath = String(settings[key] || '');
       if (currentPath && path.resolve(currentPath).toLowerCase().startsWith(path.resolve(legacyBackgrounds).toLowerCase())) {
         settings[key] = path.join(targetBackgrounds, path.basename(currentPath));
@@ -129,7 +129,7 @@ const defaultState = () => {
   const now = Date.now();
   const noteId = `note-${now}`;
   return {
-    version: 7,
+    version: 8,
     activeNoteId: noteId,
     notes: [{
       id: noteId,
@@ -181,6 +181,17 @@ const defaultState = () => {
       desktopBoardLocked: false,
       desktopBoardScope: 'active',
       desktopBoardStyle: 'glass',
+      desktopBoardTheme: 'inherit',
+      desktopBoardBackground: '#FFF8E8',
+      desktopBoardTextColor: '',
+      desktopBoardBackgroundOpacity: 0.72,
+      desktopBoardBackgroundImagePath: '',
+      desktopBoardBackgroundImageName: '',
+      desktopBoardBackgroundImageOpacity: 0.55,
+      desktopBoardBackgroundFit: 'cover',
+      desktopBoardOpacity: 0.96,
+      desktopBoardBrightness: 1,
+      desktopBoardBlur: 28,
       showCompleted: true,
       playSound: true,
       compactMode: false
@@ -218,15 +229,22 @@ function normalizeState(input) {
   normalized.settings.widgetBackgroundImageOpacity = clamp(Number(normalized.settings.widgetBackgroundImageOpacity), 0, 1);
   normalized.settings.widgetOpacity = clamp(Number(normalized.settings.widgetOpacity), 0.65, 1);
   normalized.settings.widgetWidth = clamp(Number(normalized.settings.widgetWidth), 280, 420);
+  normalized.settings.desktopBoardBackgroundOpacity = clamp(Number(normalized.settings.desktopBoardBackgroundOpacity), 0.2, 1);
+  normalized.settings.desktopBoardBackgroundImageOpacity = clamp(Number(normalized.settings.desktopBoardBackgroundImageOpacity), 0, 1);
+  normalized.settings.desktopBoardOpacity = clamp(Number(normalized.settings.desktopBoardOpacity), 0.55, 1);
+  normalized.settings.desktopBoardBrightness = clamp(Number(normalized.settings.desktopBoardBrightness), 0.45, 1.5);
+  normalized.settings.desktopBoardBlur = clamp(Number(normalized.settings.desktopBoardBlur), 0, 56);
   if (!['active', 'all'].includes(normalized.settings.desktopBoardScope)) normalized.settings.desktopBoardScope = 'active';
   if (!['clear', 'glass', 'airy'].includes(normalized.settings.desktopBoardStyle)) normalized.settings.desktopBoardStyle = 'glass';
+  if (!['inherit', 'light', 'dark', 'system'].includes(normalized.settings.desktopBoardTheme)) normalized.settings.desktopBoardTheme = 'inherit';
   normalized.desktopBoardBounds.width = clamp(Number(normalized.desktopBoardBounds.width), 280, 560);
   normalized.desktopBoardBounds.height = clamp(Number(normalized.desktopBoardBounds.height), 220, 760);
   if (!['widget', 'tray', 'quit'].includes(normalized.settings.closeBehavior)) normalized.settings.closeBehavior = 'widget';
   if (!['full', 'widget'].includes(normalized.settings.lastMode)) normalized.settings.lastMode = 'full';
   if (!['cover', 'contain', 'repeat'].includes(normalized.settings.backgroundFit)) normalized.settings.backgroundFit = 'cover';
   if (!['cover', 'contain', 'repeat'].includes(normalized.settings.widgetBackgroundFit)) normalized.settings.widgetBackgroundFit = 'cover';
-  for (const key of ['mainTextColor', 'widgetTextColor']) {
+  if (!['cover', 'contain', 'repeat'].includes(normalized.settings.desktopBoardBackgroundFit)) normalized.settings.desktopBoardBackgroundFit = 'cover';
+  for (const key of ['mainTextColor', 'widgetTextColor', 'desktopBoardTextColor']) {
     if (!/^#[0-9a-f]{6}$/i.test(String(normalized.settings[key] || ''))) normalized.settings[key] = '';
   }
   if (previousVersion < 3) {
@@ -255,10 +273,10 @@ function normalizeState(input) {
 function normalizeAppearancePreview(input) {
   if (!input || typeof input !== 'object') return {};
   const preview = {};
-  for (const key of ['background', 'widgetBackground']) {
+  for (const key of ['background', 'widgetBackground', 'desktopBoardBackground']) {
     if (/^#[0-9a-f]{6}$/i.test(String(input[key] || ''))) preview[key] = String(input[key]);
   }
-  for (const key of ['mainTextColor', 'widgetTextColor']) {
+  for (const key of ['mainTextColor', 'widgetTextColor', 'desktopBoardTextColor']) {
     const value = String(input[key] || '');
     if (!value || /^#[0-9a-f]{6}$/i.test(value)) preview[key] = value;
   }
@@ -269,12 +287,17 @@ function normalizeAppearancePreview(input) {
     widgetBackgroundOpacity: [0.2, 1],
     widgetBackgroundImageOpacity: [0, 1],
     widgetOpacity: [0.65, 1],
-    widgetWidth: [280, 420]
+    widgetWidth: [280, 420],
+    desktopBoardBackgroundOpacity: [0.2, 1],
+    desktopBoardBackgroundImageOpacity: [0, 1],
+    desktopBoardOpacity: [0.55, 1],
+    desktopBoardBrightness: [0.45, 1.5],
+    desktopBoardBlur: [0, 56]
   };
   for (const [key, [minimum, maximum]] of Object.entries(numeric)) {
     if (Number.isFinite(Number(input[key]))) preview[key] = clamp(Number(input[key]), minimum, maximum);
   }
-  for (const key of ['backgroundFit', 'widgetBackgroundFit']) {
+  for (const key of ['backgroundFit', 'widgetBackgroundFit', 'desktopBoardBackgroundFit']) {
     if (['cover', 'contain', 'repeat'].includes(input[key])) preview[key] = input[key];
   }
   return preview;
@@ -325,7 +348,8 @@ function iconPath() {
 
 const backgroundTargets = {
   main: { pathKey: 'backgroundImagePath', nameKey: 'backgroundImageName', opacityKey: 'backgroundImageOpacity', filePrefix: 'main-background', defaultOpacity: 0.62 },
-  widget: { pathKey: 'widgetBackgroundImagePath', nameKey: 'widgetBackgroundImageName', opacityKey: 'widgetBackgroundImageOpacity', filePrefix: 'widget-background', defaultOpacity: 0.62 }
+  widget: { pathKey: 'widgetBackgroundImagePath', nameKey: 'widgetBackgroundImageName', opacityKey: 'widgetBackgroundImageOpacity', filePrefix: 'widget-background', defaultOpacity: 0.62 },
+  desktopBoard: { pathKey: 'desktopBoardBackgroundImagePath', nameKey: 'desktopBoardBackgroundImageName', opacityKey: 'desktopBoardBackgroundImageOpacity', filePrefix: 'desktop-board-background', defaultOpacity: 0.62 }
 };
 
 function imageMime(extension) {
@@ -563,9 +587,9 @@ function applyDesktopBoardLock() {
 
 function attachDesktopBoardToDesktop() {
   clearTimeout(desktopBoardAttachTimer);
-  if (process.platform !== 'win32' || (testMode() && !process.argv.includes('--test-desktop-host')) || !desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
+  if (!appState?.settings.desktopBoardEnabled || process.platform !== 'win32' || (testMode() && !process.argv.includes('--test-desktop-host')) || !desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
   desktopBoardAttachTimer = setTimeout(() => {
-    if (!desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
+    if (!appState.settings.desktopBoardEnabled || !desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
     const handle = desktopBoardWindow.getNativeWindowHandle();
     const handleValue = handle.length >= 8 ? handle.readBigUInt64LE(0) : BigInt(handle.readUInt32LE(0));
     const source = `
@@ -590,7 +614,7 @@ public static class LingJianDesktopHost {
       return false;
     }, IntPtr.Zero);
     SetParent(child, host);
-    return SetWindowPos(child, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0040);
+    return SetWindowPos(child, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
   }
 }`;
     const command = `Add-Type -TypeDefinition @'\n${source}\n'@; [LingJianDesktopHost]::Attach([IntPtr]::new([long]${handleValue}))`;
@@ -602,6 +626,12 @@ public static class LingJianDesktopHost {
       desktopBoardAttached = !error && /true/i.test(String(stdout));
       if (error) console.warn('桌面任务板未能嵌入桌面层，将使用普通桌面窗口回退:', error.message);
       if (!desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
+      if (!appState.settings.desktopBoardEnabled) {
+        desktopBoardWindow.hide();
+        desktopBoardAttached = false;
+        sendDesktopBoardState();
+        return;
+      }
       desktopBoardInternalMove = true;
       desktopBoardWindow.setBounds(desktopBoardTargetBounds(), false);
       desktopBoardInternalMove = false;
@@ -653,6 +683,7 @@ function createDesktopBoardWindow() {
     }
   });
   desktopBoardWindow.setMenuBarVisibility(false);
+  desktopBoardWindow.setOpacity(clamp(Number(appState.settings.desktopBoardOpacity), 0.55, 1));
   desktopBoardWindow.loadFile(path.join(__dirname, 'desktop-board.html'));
   desktopBoardWindow.once('ready-to-show', () => {
     applyDesktopBoardLock();
@@ -676,6 +707,7 @@ function createDesktopBoardWindow() {
 function showDesktopBoard() {
   appState.settings.desktopBoardEnabled = true;
   const board = createDesktopBoardWindow();
+  board.setOpacity(clamp(Number(appState.settings.desktopBoardOpacity), 0.55, 1));
   if (!board.isDestroyed() && !board.isVisible()) board.showInactive();
   applyDesktopBoardLock();
   attachDesktopBoardToDesktop();
@@ -687,6 +719,9 @@ function showDesktopBoard() {
 
 function hideDesktopBoard() {
   appState.settings.desktopBoardEnabled = false;
+  clearTimeout(desktopBoardAttachTimer);
+  desktopBoardAttachTimer = null;
+  desktopBoardAttached = false;
   if (desktopBoardWindow && !desktopBoardWindow.isDestroyed()) desktopBoardWindow.hide();
   persistState();
   rebuildTrayMenu();
@@ -860,6 +895,9 @@ function updateSetting(key, value) {
   if (key === 'alwaysOnTop' && mainWindow && !widgetMode) mainWindow.setAlwaysOnTop(Boolean(value));
   if (key === 'windowOpacity' && mainWindow && !widgetMode) mainWindow.setOpacity(clamp(Number(value), 0.55, 1));
   if (key === 'widgetOpacity' && mainWindow && widgetMode) mainWindow.setOpacity(clamp(Number(value), 0.65, 1));
+  if (key === 'desktopBoardOpacity' && desktopBoardWindow && !desktopBoardWindow.isDestroyed()) {
+    desktopBoardWindow.setOpacity(clamp(Number(value), 0.55, 1));
+  }
   if (['widgetWidth', 'widgetDockLeft'].includes(key) && mainWindow && widgetMode) resizeWidget(widgetExpanded);
   if (key === 'edgeHide') setEdgeHide(Boolean(value));
   if (key === 'autoLaunch') appState.settings.autoLaunch = applyAutoLaunch(Boolean(value));
@@ -1580,6 +1618,11 @@ function registerIpc() {
     if (action === 'reattach') { attachDesktopBoardToDesktop(); return true; }
     return false;
   });
+  ipcMain.handle('desktop-board:status', () => ({
+    enabled: Boolean(appState.settings.desktopBoardEnabled),
+    visible: Boolean(desktopBoardWindow && !desktopBoardWindow.isDestroyed() && desktopBoardWindow.isVisible()),
+    attached: desktopBoardAttached
+  }));
   ipcMain.handle('desktop-board:select-note', (_event, noteId) => {
     if (!appState.notes.some(note => note.id === noteId)) return false;
     appState.activeNoteId = noteId;
@@ -1625,6 +1668,9 @@ function registerIpc() {
     }
     if (Object.hasOwn(preview, 'widgetOpacity') && mainWindow && widgetMode) {
       mainWindow.setOpacity(preview.widgetOpacity);
+    }
+    if (Object.hasOwn(preview, 'desktopBoardOpacity') && desktopBoardWindow && !desktopBoardWindow.isDestroyed()) {
+      desktopBoardWindow.setOpacity(preview.desktopBoardOpacity);
     }
     if (Object.hasOwn(preview, 'widgetWidth') && mainWindow && widgetMode) {
       resizeWidget(widgetExpanded, false);
@@ -1733,6 +1779,7 @@ function registerIpc() {
     }
     backgroundCache.delete(target);
     await persistState(true);
+    broadcast('app:background-changed', { target, path: savedPath });
     const buffer = await fsp.readFile(savedPath);
     return {
       canceled: false,
@@ -1751,6 +1798,7 @@ function registerIpc() {
     appState.settings[config.nameKey] = '';
     backgroundCache.delete(target);
     persistState();
+    broadcast('app:background-changed', { target, path: '' });
     return true;
   });
   ipcMain.handle('data:export', async event => {

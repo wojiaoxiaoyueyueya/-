@@ -7,6 +7,42 @@ let boardState = { enabled: true, locked: false, scope: 'active', style: 'glass'
 const completing = new Set();
 let resizeActive = false;
 let resizeFrame = null;
+let backgroundImageData = '';
+let loadedBackgroundPath = '';
+let backgroundLoadSequence = 0;
+
+function hexToRgb(hex) {
+  const cleaned = String(hex || '').replace('#', '');
+  const value = cleaned.length === 3 ? cleaned.split('').map(char => char + char).join('') : cleaned;
+  const number = Number.parseInt(value, 16);
+  if (!Number.isFinite(number)) return [255, 248, 232];
+  return [(number >> 16) & 255, (number >> 8) & 255, number & 255];
+}
+
+function applyBackgroundLayer() {
+  const layer = $('#desktopBoardBackgroundLayer');
+  if (!layer) return;
+  if (layer.__lingjianBackgroundData !== backgroundImageData) {
+    layer.__lingjianBackgroundData = backgroundImageData;
+    layer.style.backgroundImage = backgroundImageData ? `url(${JSON.stringify(backgroundImageData)})` : 'none';
+  }
+  const fit = state.settings.desktopBoardBackgroundFit || 'cover';
+  layer.style.backgroundSize = fit === 'repeat' ? 'auto' : fit;
+  layer.style.backgroundRepeat = fit === 'repeat' ? 'repeat' : 'no-repeat';
+  layer.style.backgroundPosition = 'center';
+  layer.style.opacity = String(state.settings.desktopBoardBackgroundImageOpacity ?? 0.55);
+}
+
+async function loadBackgroundImage(force = false) {
+  const expectedPath = state.settings.desktopBoardBackgroundImagePath || '';
+  if (!force && expectedPath === loadedBackgroundPath && (backgroundImageData || !expectedPath)) return;
+  const sequence = ++backgroundLoadSequence;
+  const image = await api.loadBackgroundImage('desktopBoard', false);
+  if (sequence !== backgroundLoadSequence) return;
+  loadedBackgroundPath = image?.path || expectedPath;
+  backgroundImageData = image?.dataUrl || '';
+  applyBackgroundLayer();
+}
 
 function currentNote() {
   return state.notes.find(note => note.id === state.activeNoteId) || state.notes[0];
@@ -35,12 +71,25 @@ function reminderLabel(task) {
 }
 
 function renderTheme() {
-  const theme = state.settings.theme || 'light';
+  const selectedTheme = state.settings.desktopBoardTheme || 'inherit';
+  const theme = selectedTheme === 'inherit' ? (state.settings.theme || 'light') : selectedTheme;
   const dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  const automaticText = dark ? '#F3F3F5' : '#24262C';
+  const text = state.settings.desktopBoardTextColor || automaticText;
+  let rgb = hexToRgb(state.settings.desktopBoardBackground || state.settings.background || '#FFF8E8');
+  if (dark) rgb = rgb.map(value => Math.round(value * .24));
   document.body.classList.toggle('theme-dark', dark);
   document.body.classList.toggle('locked', Boolean(boardState.locked));
   document.body.classList.toggle('style-clear', boardState.style === 'clear');
   document.body.classList.toggle('style-airy', boardState.style === 'airy');
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  document.documentElement.style.setProperty('--board-bg-rgb', rgb.join(', '));
+  document.documentElement.style.setProperty('--board-bg-opacity', String(state.settings.desktopBoardBackgroundOpacity ?? 0.72));
+  document.documentElement.style.setProperty('--board-text', text);
+  document.documentElement.style.setProperty('--board-muted', `color-mix(in srgb, ${text} 58%, transparent)`);
+  document.documentElement.style.setProperty('--board-blur', `${Number(state.settings.desktopBoardBlur ?? 28)}px`);
+  document.documentElement.style.setProperty('--board-brightness', String(state.settings.desktopBoardBrightness ?? 1));
+  applyBackgroundLayer();
   $('#boardLockBtn').classList.toggle('active', Boolean(boardState.locked));
   $('#boardLockBtn').textContent = boardState.locked ? '◆' : '◇';
   $('#boardLockBtn').title = boardState.locked ? '已锁定，点击允许拖动' : '点击锁定位置';
@@ -182,14 +231,19 @@ function bindEvents() {
 async function init() {
   state = await api.loadState();
   bindEvents();
+  await loadBackgroundImage(true);
   render();
   api.onStateUpdated(value => {
+    const previousPath = state?.settings?.desktopBoardBackgroundImagePath || '';
     state = value;
     for (const id of [...completing]) {
       const task = state.notes.flatMap(note => note.tasks || []).find(item => item.id === id);
       if (!task || task.done) completing.delete(id);
     }
     render();
+    if (previousPath !== (state.settings.desktopBoardBackgroundImagePath || '') || (state.settings.desktopBoardBackgroundImagePath && !backgroundImageData)) {
+      loadBackgroundImage(true).catch(error => console.error('读取桌面任务板背景失败:', error));
+    }
   });
   api.onSettingChanged(({ key, value }) => {
     state.settings[key] = value;
@@ -203,6 +257,17 @@ async function init() {
       state.settings.desktopBoardStyle = boardState.style;
     }
     render();
+  });
+  api.onAppearancePreview(patch => {
+    if (!patch || typeof patch !== 'object') return;
+    Object.assign(state.settings, patch);
+    renderTheme();
+  });
+  api.onBackgroundChanged(({ target }) => {
+    if (target !== 'desktopBoard') return;
+    loadedBackgroundPath = '';
+    backgroundImageData = '';
+    loadBackgroundImage(true).catch(error => console.error('刷新桌面任务板背景失败:', error));
   });
 }
 

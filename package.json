@@ -1,6 +1,6 @@
 {
   "name": "lingjian-desktop",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "轻量、灵活、可提醒的桌面便签与待办应用",
   "main": "src/main.js",
   "author": "LingJian",
@@ -10,7 +10,7 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "render:icon": "electron scripts/render_icon.cjs",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/desktop-board.js",
     "test:migration": "node scripts/background_migration_test.mjs",
     "test:ui": "node scripts/ui_smoke.mjs",
     "build": "electron-builder --win portable",
