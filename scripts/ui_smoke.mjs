@@ -219,6 +219,13 @@ try {
     'Desktop board did not render synchronized tasks or resize handles');
   assert(!desktopBoardInitial.locked && desktopBoardInitial.skipTaskbarLabel === '桌面层', 'Desktop board initial interaction state is incorrect');
   if (process.env.LINGJIAN_TEST_DESKTOP_HOST) assert(desktopBoardInitial.attached === true, 'Desktop board was not attached to the Windows desktop host');
+  await desktopBoard.evaluate(`(() => {
+    window.__desktopBoardCspViolations = [];
+    document.addEventListener('securitypolicyviolation', event => {
+      window.__desktopBoardCspViolations.push({ directive: event.violatedDirective, blocked: event.blockedURI });
+    });
+    return true;
+  })()`);
 
   const desktopBoardAppearanceImage = path.join(selectedDataDirectory, 'backgrounds', 'desktop-board-appearance.bmp');
   await fs.mkdir(path.dirname(desktopBoardAppearanceImage), { recursive: true });
@@ -275,7 +282,8 @@ try {
       brightness: root.getPropertyValue('--board-brightness').trim(),
       image: layer.style.backgroundImage,
       imageOpacity: layer.style.opacity,
-      imageSize: layer.style.backgroundSize
+      imageSize: layer.style.backgroundSize,
+      cspViolations: window.__desktopBoardCspViolations || []
     };
   })()`);
   assert(desktopBoardAppearance.dark && desktopBoardAppearance.backgroundOpacity === '0.67',
@@ -285,6 +293,8 @@ try {
   assert(desktopBoardAppearance.image.startsWith('url(') && desktopBoardAppearance.image.includes('data:image/bmp;base64,')
     && desktopBoardAppearance.imageOpacity === '0.73' && desktopBoardAppearance.imageSize === 'contain',
   `Desktop board background image was not rendered correctly: ${JSON.stringify(desktopBoardAppearance)}`);
+  assert(desktopBoardAppearance.cspViolations.length === 0,
+    `Desktop board background image was blocked by Content Security Policy: ${JSON.stringify(desktopBoardAppearance.cspViolations)}`);
   console.log('[ui-smoke] 桌面任务板独立主题、背景图片与实时外观测试通过');
 
   const desktopBoardAnimation = await desktopBoard.evaluate(`(async () => {
