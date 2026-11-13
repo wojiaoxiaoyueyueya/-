@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('lingjian', {
   desktopBoardStatus: () => ipcRenderer.invoke('desktop-board:status'),
   desktopBoardSelectNote: noteId => ipcRenderer.invoke('desktop-board:select-note', noteId),
   desktopBoardCompleteTask: payload => ipcRenderer.invoke('desktop-board:complete-task', payload),
+  desktopBoardAddTask: payload => ipcRenderer.invoke('desktop-board:add-task', payload),
   desktopBoardOpenTask: payload => ipcRenderer.invoke('desktop-board:open-task', payload),
   isCursorInsideWidget: () => ipcRenderer.invoke('window:widget-pointer-inside'),
   edgeHover: () => ipcRenderer.invoke('window:edge-hover'),

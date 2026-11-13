@@ -219,6 +219,64 @@ try {
     'Desktop board did not render synchronized tasks or resize handles');
   assert(!desktopBoardInitial.locked && desktopBoardInitial.skipTaskbarLabel === '桌面层', 'Desktop board initial interaction state is incorrect');
   if (process.env.LINGJIAN_TEST_DESKTOP_HOST) assert(desktopBoardInitial.attached === true, 'Desktop board was not attached to the Windows desktop host');
+  const stableBefore = await main.evaluate(`window.lingjian.desktopBoardStatus()`);
+  await desktopBoard.evaluate(`window.lingjian.desktopBoardAction('reattach')`);
+  await delay(260);
+  const stableAfter = await main.evaluate(`window.lingjian.desktopBoardStatus()`);
+  assert(JSON.stringify(stableAfter.bounds) === JSON.stringify(stableBefore.bounds),
+    `Desktop board moved after a redundant desktop reattach: ${JSON.stringify({ before: stableBefore, after: stableAfter })}`);
+
+  const quickTaskText = `桌面快速输入-${Date.now()}`;
+  const desktopBoardQuickAdd = await desktopBoard.evaluate(`(async () => {
+    const input = document.querySelector('#boardQuickAddInput');
+    input.value = ${JSON.stringify(quickTaskText)};
+    input.dataset.expected = ${JSON.stringify(quickTaskText)};
+    document.querySelector('#boardQuickAddForm').requestSubmit();
+    const deadline = performance.now() + 3000;
+    while (![...document.querySelectorAll('.task-copy strong')].some(item => item.textContent === input.dataset.expected) && performance.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+    const expected = input.dataset.expected;
+    const shell = document.querySelector('.desktop-board').getBoundingClientRect();
+    const form = document.querySelector('#boardQuickAddForm').getBoundingClientRect();
+    const style = getComputedStyle(document.querySelector('.desktop-board'));
+    return {
+      expected,
+      added: [...document.querySelectorAll('.task-copy strong')].some(item => item.textContent === expected),
+      cleared: input.value === '',
+      inputVisible: form.left >= shell.left && form.right <= shell.right && form.top >= shell.top && form.bottom <= shell.bottom,
+      borderWidth: style.borderTopWidth,
+      clipPath: style.clipPath
+    };
+  })()`);
+  assert(desktopBoardQuickAdd.added && desktopBoardQuickAdd.cleared && desktopBoardQuickAdd.inputVisible,
+    `Desktop board quick input is not usable: ${JSON.stringify(desktopBoardQuickAdd)}`);
+  assert(desktopBoardQuickAdd.borderWidth === '0px' && desktopBoardQuickAdd.clipPath !== 'none',
+    `Desktop board outer white border was not removed: ${JSON.stringify(desktopBoardQuickAdd)}`);
+  const quickTaskInMain = await main.evaluate(`state.notes.some(note => note.tasks.some(task => task.text === ${JSON.stringify(quickTaskText)}))`);
+  assert(quickTaskInMain === true, 'Desktop board quick input did not synchronize to the main state');
+  const desktopBoardCompact = await desktopBoard.evaluate(`(async () => {
+    window.resizeTo(280, 220);
+    await new Promise(resolve => setTimeout(resolve, 260));
+    const shell = document.querySelector('.desktop-board').getBoundingClientRect();
+    const form = document.querySelector('#boardQuickAddForm').getBoundingClientRect();
+    const input = document.querySelector('#boardQuickAddInput').getBoundingClientRect();
+    const result = {
+      size: [innerWidth, innerHeight],
+      overflow: [document.documentElement.scrollWidth - innerWidth, document.documentElement.scrollHeight - innerHeight],
+      shell: [shell.left, shell.top, shell.right, shell.bottom],
+      formVisible: form.width > 0 && form.height > 0 && form.bottom <= shell.bottom,
+      inputVisible: input.width > 40 && input.height > 20,
+      footerDisplay: getComputedStyle(document.querySelector('.board-footer')).display
+    };
+    window.resizeTo(${Number(stableBefore.bounds.width)}, ${Number(stableBefore.bounds.height)});
+    await new Promise(resolve => setTimeout(resolve, 220));
+    return result;
+  })()`);
+  assert(desktopBoardCompact.size[0] === 280 && desktopBoardCompact.size[1] === 220
+    && desktopBoardCompact.overflow[0] <= 0 && desktopBoardCompact.overflow[1] <= 0
+    && desktopBoardCompact.formVisible && desktopBoardCompact.inputVisible,
+  `Desktop board compact resize is not adaptive: ${JSON.stringify(desktopBoardCompact)}`);
   await desktopBoard.evaluate(`(() => {
     window.__desktopBoardCspViolations = [];
     document.addEventListener('securitypolicyviolation', event => {
@@ -297,6 +355,7 @@ try {
     `Desktop board background image was blocked by Content Security Policy: ${JSON.stringify(desktopBoardAppearance.cspViolations)}`);
   console.log('[ui-smoke] 桌面任务板独立主题、背景图片与实时外观测试通过');
 
+  const boundsBeforeCompletion = await main.evaluate(`window.lingjian.desktopBoardStatus().then(value => value.bounds)`);
   const desktopBoardAnimation = await desktopBoard.evaluate(`(async () => {
     const item = document.querySelector('[data-task-id="${desktopBoardTask.taskId}"]');
     item.querySelector('.task-check').click();
@@ -316,6 +375,9 @@ try {
   assert(desktopBoardAnimation.during.completing && desktopBoardAnimation.during.animation === 'task-swish',
     `Desktop completion animation did not start: ${JSON.stringify(desktopBoardAnimation)}`);
   assert(desktopBoardAnimation.removed, 'Completed task did not disappear from the desktop board');
+  const boundsAfterCompletion = await main.evaluate(`window.lingjian.desktopBoardStatus().then(value => value.bounds)`);
+  assert(JSON.stringify(boundsAfterCompletion) === JSON.stringify(boundsBeforeCompletion),
+    `Desktop board moved after completing a task: ${JSON.stringify({ before: boundsBeforeCompletion, after: boundsAfterCompletion })}`);
   const completedInMain = await main.evaluate(`state.notes.find(note => note.id === ${JSON.stringify(desktopBoardTask.noteId)}).tasks.find(task => task.id === ${JSON.stringify(desktopBoardTask.taskId)}).done`);
   assert(completedInMain === true, 'Desktop board completion did not synchronize back to the main state');
   const desktopBoardLock = await desktopBoard.evaluate(`(async () => {

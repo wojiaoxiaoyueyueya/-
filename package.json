@@ -1,6 +1,6 @@
 {
   "name": "lingjian-desktop",
-  "version": "1.10.1",
+  "version": "1.11.0",
   "description": "轻量、灵活、可提醒的桌面便签与待办应用",
   "main": "src/main.js",
   "author": "LingJian",

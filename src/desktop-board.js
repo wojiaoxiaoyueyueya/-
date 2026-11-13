@@ -10,6 +10,7 @@ let resizeFrame = null;
 let backgroundImageData = '';
 let loadedBackgroundPath = '';
 let backgroundLoadSequence = 0;
+let addTaskPending = false;
 
 function hexToRgb(hex) {
   const cleaned = String(hex || '').replace('#', '');
@@ -188,6 +189,28 @@ async function completeTask(item) {
   }
 }
 
+async function addTaskFromBoard() {
+  const input = $('#boardQuickAddInput');
+  const button = $('#boardQuickAddButton');
+  const text = input.value.trim();
+  if (!text || addTaskPending) {
+    input.focus();
+    return;
+  }
+  addTaskPending = true;
+  input.disabled = true;
+  button.disabled = true;
+  try {
+    const task = await api.desktopBoardAddTask({ noteId: currentNote()?.id, text });
+    if (task) input.value = '';
+  } finally {
+    addTaskPending = false;
+    input.disabled = false;
+    button.disabled = false;
+    input.focus();
+  }
+}
+
 function bindResize() {
   document.querySelectorAll('[data-resize-edge]').forEach(handle => {
     handle.addEventListener('pointerdown', async event => {
@@ -217,13 +240,16 @@ function bindEvents() {
   $('#boardLockBtn').addEventListener('click', () => api.desktopBoardAction('toggle-lock'));
   $('#boardOpenBtn').addEventListener('click', () => api.desktopBoardAction('open-main'));
   $('#boardHideBtn').addEventListener('click', () => api.desktopBoardAction('hide'));
+  $('#boardQuickAddForm').addEventListener('submit', event => {
+    event.preventDefault();
+    addTaskFromBoard().catch(error => console.error('桌面任务板添加任务失败:', error));
+  });
   $('#boardList').addEventListener('click', event => {
     const item = event.target.closest('.board-task');
     if (!item) return;
     if (event.target.closest('.task-check')) completeTask(item);
     else if (event.target.closest('.task-copy')) api.desktopBoardOpenTask({ noteId: item.dataset.noteId, taskId: item.dataset.taskId });
   });
-  window.addEventListener('focus', () => api.desktopBoardAction('reattach'));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', renderTheme);
   bindResize();
 }

@@ -2,6 +2,7 @@
 
 const { app, BrowserWindow, ipcMain, Tray, Menu, Notification, nativeImage, screen, dialog, nativeTheme, shell } = require('electron');
 const { execFile } = require('child_process');
+const { randomUUID } = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs/promises');
@@ -553,7 +554,7 @@ function desktopBoardTargetBounds() {
     ? { x: saved.x, y: saved.y, width, height }
     : screen.getPrimaryDisplay().workArea;
   const area = screen.getDisplayMatching(reference).workArea;
-  const margin = 18;
+  const margin = 0;
   return {
     width,
     height,
@@ -587,6 +588,7 @@ function applyDesktopBoardLock() {
 
 function attachDesktopBoardToDesktop() {
   clearTimeout(desktopBoardAttachTimer);
+  if (desktopBoardAttached) return;
   if (!appState?.settings.desktopBoardEnabled || process.platform !== 'win32' || (testMode() && !process.argv.includes('--test-desktop-host')) || !desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
   desktopBoardAttachTimer = setTimeout(() => {
     if (!appState.settings.desktopBoardEnabled || !desktopBoardWindow || desktopBoardWindow.isDestroyed()) return;
@@ -694,7 +696,6 @@ function createDesktopBoardWindow() {
   });
   desktopBoardWindow.on('move', rememberDesktopBoardBounds);
   desktopBoardWindow.on('resize', rememberDesktopBoardBounds);
-  desktopBoardWindow.on('focus', attachDesktopBoardToDesktop);
   desktopBoardWindow.on('close', event => {
     if (isQuitting) return;
     event.preventDefault();
@@ -748,8 +749,8 @@ function beginWindowResize(sender, edge) {
     edge: String(edge),
     startBounds: target.getBounds(),
     startPoint: screen.getCursorScreenPoint(),
-    minimumWidth: Math.max(320, minimumWidth),
-    minimumHeight: Math.max(260, minimumHeight)
+    minimumWidth: target === desktopBoardWindow ? Math.max(280, minimumWidth) : Math.max(320, minimumWidth),
+    minimumHeight: target === desktopBoardWindow ? Math.max(220, minimumHeight) : Math.max(260, minimumHeight)
   };
   clearTimeout(resizeFinishTimer);
   return true;
@@ -794,7 +795,6 @@ function finishWindowResize(sender) {
   if (bounds && resize.target === desktopBoardWindow) {
     appState.desktopBoardBounds = bounds;
     persistState(true);
-    attachDesktopBoardToDesktop();
   }
   activeWindowResize = null;
   return bounds || true;
@@ -1621,7 +1621,9 @@ function registerIpc() {
   ipcMain.handle('desktop-board:status', () => ({
     enabled: Boolean(appState.settings.desktopBoardEnabled),
     visible: Boolean(desktopBoardWindow && !desktopBoardWindow.isDestroyed() && desktopBoardWindow.isVisible()),
-    attached: desktopBoardAttached
+    attached: desktopBoardAttached,
+    bounds: desktopBoardWindow && !desktopBoardWindow.isDestroyed() ? desktopBoardWindow.getBounds() : null,
+    savedBounds: appState.desktopBoardBounds
   }));
   ipcMain.handle('desktop-board:select-note', (_event, noteId) => {
     if (!appState.notes.some(note => note.id === noteId)) return false;
@@ -1638,6 +1640,27 @@ function registerIpc() {
     await persistState(true);
     broadcastState();
     return true;
+  });
+  ipcMain.handle('desktop-board:add-task', async (_event, payload) => {
+    const text = String(payload?.text || '').trim().slice(0, 160);
+    const note = appState.notes.find(item => item.id === payload?.noteId) || appState.notes.find(item => item.id === appState.activeNoteId) || appState.notes[0];
+    if (!text || !note) return false;
+    const task = {
+      id: `task-${randomUUID()}`,
+      text,
+      details: '',
+      done: false,
+      color: note.color || '#F7B955',
+      priority: 'normal',
+      quantity: 1,
+      createdAt: Date.now(),
+      reminder: { enabled: false, at: '', repeat: 'none', lastNotifiedAt: '' }
+    };
+    note.tasks = Array.isArray(note.tasks) ? note.tasks : [];
+    note.tasks.unshift(task);
+    await persistState(true);
+    broadcastState();
+    return task;
   });
   ipcMain.handle('desktop-board:open-task', (_event, payload) => {
     const note = appState.notes.find(item => item.id === payload?.noteId);
